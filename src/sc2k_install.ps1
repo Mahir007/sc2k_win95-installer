@@ -514,6 +514,16 @@ function Remove-Installation {
     }
 }
 
+# The game's settings, which SC2000X writes. Uninstall and rollback remove
+# them; reinstall keeps them.
+function Remove-GameSetting {
+    param($Paths)
+    if (Test-Path $Paths.GameSettingsKey) {
+        Remove-Item -Path $Paths.GameSettingsKey -Recurse -Force
+    }
+    Remove-EmptyKey $Paths.MaxisKey
+}
+
 function Invoke-Uninstall {
     param($Paths)
 
@@ -524,10 +534,7 @@ function Invoke-Uninstall {
 
     Write-Step "Uninstalling $AppName..."
     Remove-Installation $Paths
-    if (Test-Path $Paths.GameSettingsKey) {
-        Remove-Item -Path $Paths.GameSettingsKey -Recurse -Force
-    }
-    Remove-EmptyKey $Paths.MaxisKey
+    Remove-GameSetting $Paths
 
     Write-Host "$AppName has been uninstalled." -ForegroundColor Green
     0
@@ -665,6 +672,7 @@ function Invoke-Install {
             Write-Step 'Removing the partly installed game...'
             try {
                 Remove-Installation $Paths
+                Remove-GameSetting $Paths
             } catch {
                 Write-Warn "Couldn't remove everything: $($_.Exception.Message)"
             }
