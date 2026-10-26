@@ -25,10 +25,13 @@ jobs:
       matrix:
         # Windows PowerShell 5.1 and PowerShell 7
         shell: [powershell, pwsh]
+    # A step's shell can't use the matrix context; job defaults can
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
     steps:
       - uses: actions/checkout@v4
       - name: Pester
-        shell: ${{ matrix.shell }}
         run: |
           Install-Module Pester -MinimumVersion 5.0 -Force -Scope CurrentUser -SkipPublisherCheck
           Import-Module Pester -MinimumVersion 5.0
