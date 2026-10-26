@@ -84,6 +84,7 @@ function Get-Paths {
         GameShortcut    = Join-Path $startMenuDir 'SimCity 2000.lnk'
         UrkShortcut     = Join-Path $startMenuDir 'SimCity Urban Renewal Kit.lnk'
         UninstShortcut  = Join-Path $startMenuDir "Uninstall $UninstallDisplayName.lnk"
+        DesktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'SimCity 2000.lnk'
         UninstallKey    = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$UninstallKeyName"
         CompatKey       = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers'
         GameSettingsKey = 'HKCU:\Software\Maxis\SimCity 2000'
@@ -366,7 +367,7 @@ function Remove-Installation {
         Remove-DirectoryLink $Paths.DataLink
     }
 
-    foreach ($shortcut in $Paths.GameShortcut, $Paths.UrkShortcut, $Paths.UninstShortcut) {
+    foreach ($shortcut in $Paths.GameShortcut, $Paths.UrkShortcut, $Paths.UninstShortcut, $Paths.DesktopShortcut) {
         if (Test-Path -LiteralPath $shortcut) {
             Remove-Item -LiteralPath $shortcut -Force
         }
@@ -642,8 +643,17 @@ function Install-Game {
     $uninstallArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$($Paths.InstalledScript)`" -Uninstall"
 
     Write-Step 'Creating shortcuts...'
+    $gameShortcut = @{
+        Target      = $Paths.Launcher
+        Description = 'Launch SimCity 2000 SE with SC2KRepainter'
+        Icon        = $Paths.PatchedExe
+    }
+    $answer = Read-Choice -Prompt 'Create a desktop shortcut? [Y/n]' -Choices 'Y', 'N' -Default 'Y'
+    if ($answer -eq 'Y') {
+        New-Shortcut -Path $Paths.DesktopShortcut @gameShortcut
+    }
     New-Item -ItemType Directory -Path $Paths.StartMenuDir -Force | Out-Null
-    New-Shortcut -Path $Paths.GameShortcut -Target $Paths.Launcher -Description 'Launch SimCity 2000 SE with SC2KRepainter' -Icon $Paths.PatchedExe
+    New-Shortcut -Path $Paths.GameShortcut @gameShortcut
     New-Shortcut -Path $Paths.UrkShortcut -Target $Paths.UrkExe -Icon $Paths.UrkExe
     New-Shortcut -Path $Paths.UninstShortcut -Target $powershellExe -Arguments $uninstallArgs
 

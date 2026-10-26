@@ -105,6 +105,36 @@ Describe 'Install-DataLink' {
     }
 }
 
+Describe 'File associations' -Skip:($env:OS -ne 'Windows_NT') {
+    BeforeEach {
+        Mock Update-ShellAssociation { }
+        $classes = Join-Path 'TestRegistry:\' ([guid]::NewGuid())
+        New-Item -Path $classes | Out-Null
+        $script:paths = [pscustomobject]@{
+            ClassesKey = $classes
+            Launcher   = 'C:\Game\SC2KLauncher.vbs'
+            PatchedExe = 'C:\Game\SC2K\SC2000X.EXE'
+            UrkExe     = 'C:\Game\SC2K\WINSCURK.EXE'
+        }
+    }
+
+    It 'opens cities through the launcher' {
+        Register-FileAssociation $paths
+        (Get-Item (Join-Path $paths.ClassesKey '.sc2')).GetValue('') | Should -Be 'SimCity2000.Document.City'
+        $command = Join-Path $paths.ClassesKey 'SimCity2000.Document.City\shell\open\command'
+        (Get-Item $command).GetValue('') | Should -BeLike '*wscript.exe" "C:\Game\SC2KLauncher.vbs" "%1"'
+    }
+
+    It 'removes its own types but leaves an extension another program has taken' {
+        Register-FileAssociation $paths
+        Set-ItemProperty -Path (Join-Path $paths.ClassesKey '.mif') -Name '(default)' -Value 'Other.Program'
+        Remove-FileAssociation $paths
+        Test-Path (Join-Path $paths.ClassesKey '.sc2') | Should -BeFalse
+        Test-Path (Join-Path $paths.ClassesKey 'SimCity2000.Document.City') | Should -BeFalse
+        (Get-Item (Join-Path $paths.ClassesKey '.mif')).GetValue('') | Should -Be 'Other.Program'
+    }
+}
+
 Describe 'Script file' {
     It 'is ASCII only, so Windows PowerShell 5.1 reads it correctly' {
         $bytes = [IO.File]::ReadAllBytes($ScriptPath)
