@@ -14,7 +14,7 @@ and 11 from an ISO of the original CD.
    `SIMCITY.EXE`, which the installer has copied to the clipboard. Press Enter
    in the installer window once SC2000X says it has finished.
 
-Launch the game from the Start Menu or the desktop shortcut.
+Launch the game from Start Menu > Maxis > SimCity 2000.
 
 ## Usage
 
@@ -56,8 +56,8 @@ ship with the game are left out unless you saved over them.
 - Adds [SC2KRepainter](https://github.com/Guspaz/SC2KRepainter), which
   restores palette animation. The shortcuts start it
   alongside the game.
-- Creates Start Menu shortcuts for the game, the Urban Renewal Kit and the
-  uninstaller, and optionally a desktop shortcut.
+- Creates Start Menu shortcuts in a Maxis folder for the game, the Urban
+  Renewal Kit and the uninstaller.
 
 ## Troubleshooting
 
