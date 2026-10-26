@@ -86,7 +86,10 @@ not the Special Edition CD.
   repository no longer exists. This project downloads a copy of its last
   release kept in [vendor/SC2000X](vendor/SC2000X), which isn't covered by
   this project's license.
-- [SC2KRepainter](https://github.com/Guspaz/SC2KRepainter) by Guspaz.
+- [SC2KRepainter](https://github.com/Guspaz/SC2KRepainter) by Guspaz, which
+  restores palette animation. This project downloads a copy of its last
+  release kept in [vendor/SC2KRepainter](vendor/SC2KRepainter), in case its
+  repository goes. It isn't covered by this project's license either.
 - [lessmsi](https://github.com/activescott/lessmsi) and
   [7-Zip](https://github.com/ip7z/7zip), used to extract the ISO.
 
