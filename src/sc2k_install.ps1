@@ -440,7 +440,12 @@ function Remove-FileAssociation {
         $ext = Join-Path $Paths.ClassesKey $type.Extension
         $item = Get-Item -LiteralPath $ext -ErrorAction SilentlyContinue
         if ($item -and $item.GetValue('') -eq $type.ProgId) {
-            Remove-ItemProperty -LiteralPath $ext -Name '(default)'
+            # Remove-ItemProperty can't remove a default value. The key may
+            # have subkeys of its own, so only the value goes.
+            $subKey = $item.Name -replace '^HKEY_CURRENT_USER\\', ''
+            $writable = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($subKey, $true)
+            $writable.DeleteValue('')
+            $writable.Close()
             Remove-EmptyKey $ext
             $changed = $true
         }
