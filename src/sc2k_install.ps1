@@ -60,6 +60,10 @@ $UninstallKeyName = 'SimCity2000CDv1'
 $UninstallDisplayName = "SimCity 2000$([char]0x00AE) Special Edition"
 $ScriptFileName = 'sc2k_install.ps1'
 
+# SC2000X's repository is gone, so the last release is kept in this repo
+$Sc2000xUrl = 'https://raw.githubusercontent.com/Mahir007/sc2k_win95-installer/main/vendor/SC2000X/SC2000X.exe'
+$Sc2000xSha256 = 'EA761D964ED653B9BBCE637428C0300FE8D7F20447B6CFF2F6F1059D1F92EBC5'
+
 function Get-Paths {
     $installDir = Join-Path $env:LOCALAPPDATA "Programs\$AppName"
     # The original installer's Start Menu folder. Other Maxis games use it too.
@@ -571,7 +575,10 @@ function Install-Game {
 
     Write-Step 'Downloading SC2000X, the patcher for modern Windows...'
     $sc2000x = Join-Path $temp 'SC2000X.exe'
-    Save-File 'https://github.com/alekasm/SC2000X/releases/latest/download/SC2000X.exe' $sc2000x
+    Save-File $Sc2000xUrl $sc2000x
+    if ((Get-FileHash -LiteralPath $sc2000x -Algorithm SHA256).Hash -ne $Sc2000xSha256) {
+        throw "The downloaded SC2000X.exe doesn't match the expected file."
+    }
 
     Set-Clipboard -Value $Paths.GameExe
     $border = '+------------------------------------------------------------------+'

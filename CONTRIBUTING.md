@@ -4,6 +4,9 @@
 
 - `src/sc2k_install.ps1`: the installer. It is the only file users download.
 - `tests/`: Pester tests.
+- `vendor/SC2000X/SC2000X.exe`: the last SC2000X release. The script
+  downloads it from `main` and checks its SHA-256, so replacing it means
+  updating `$Sc2000xSha256`.
 - `PSScriptAnalyzerSettings.psd1`: lint rules.
 
 The script must run on Windows PowerShell 5.1, which every supported Windows
