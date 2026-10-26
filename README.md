@@ -58,6 +58,8 @@ ship with the game are left out unless you saved over them.
   alongside the game.
 - Creates Start Menu shortcuts in a Maxis folder for the game, the Urban
   Renewal Kit and the uninstaller, and optionally a desktop shortcut.
+- Registers `.sc2` cities, `.scn` scenarios and `.mif` tile sets to open in
+  the game or the Urban Renewal Kit, as the original installer does.
 
 ## Troubleshooting
 
