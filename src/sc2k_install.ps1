@@ -60,9 +60,13 @@ $UninstallKeyName = 'SimCity2000CDv1'
 $UninstallDisplayName = "SimCity 2000$([char]0x00AE) Special Edition"
 $ScriptFileName = 'sc2k_install.ps1'
 
-# SC2000X's repository is gone, so the last release is kept in this repo
-$Sc2000xUrl = 'https://raw.githubusercontent.com/Mahir007/sc2k_win95-installer/main/vendor/SC2000X/SC2000X.exe'
+# SC2000X's repository is gone, so its last release is kept in this repo.
+# SC2KRepainter's last release is kept too, in case its repository goes.
+$VendorUrl = 'https://raw.githubusercontent.com/Mahir007/sc2k_win95-installer/main/vendor'
+$Sc2000xUrl = "$VendorUrl/SC2000X/SC2000X.exe"
 $Sc2000xSha256 = 'EA761D964ED653B9BBCE637428C0300FE8D7F20447B6CFF2F6F1059D1F92EBC5'
+$RepainterUrl = "$VendorUrl/SC2KRepainter/SC2KRepainter.exe"
+$RepainterSha256 = 'A3943D8FEBB87FC18EA4E3EBD74C28BA84FA9E56F509C208AAFBDD19D8A84396'
 
 function Get-Paths {
     $installDir = Join-Path $env:LOCALAPPDATA "Programs\$AppName"
@@ -215,9 +219,12 @@ function Get-LatestAssetUrl {
 }
 
 function Save-File {
-    param([string]$Url, [string]$OutFile)
+    param([string]$Url, [string]$OutFile, [string]$Sha256)
     Write-Host "Downloading $Url"
     Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
+    if ($Sha256 -and (Get-FileHash -LiteralPath $OutFile -Algorithm SHA256).Hash -ne $Sha256) {
+        throw "The downloaded $(Split-Path $OutFile -Leaf) doesn't match the expected file."
+    }
 }
 
 function Select-IsoFile {
@@ -687,10 +694,7 @@ function Install-Game {
 
     Write-Step 'Downloading SC2000X, the patcher for modern Windows...'
     $sc2000x = Join-Path $temp 'SC2000X.exe'
-    Save-File $Sc2000xUrl $sc2000x
-    if ((Get-FileHash -LiteralPath $sc2000x -Algorithm SHA256).Hash -ne $Sc2000xSha256) {
-        throw "The downloaded SC2000X.exe doesn't match the expected file."
-    }
+    Save-File $Sc2000xUrl $sc2000x -Sha256 $Sc2000xSha256
 
     Set-Clipboard -Value $Paths.GameExe
     $border = '+------------------------------------------------------------------+'
@@ -714,16 +718,8 @@ function Install-Game {
     }
 
     Write-Step 'Downloading SC2KRepainter, which fixes palette animation...'
-    $repainterZip = Join-Path $temp 'SC2KRepainter.zip'
-    Save-File (Get-LatestAssetUrl 'Guspaz/SC2KRepainter' '*.zip') $repainterZip
-    $repainterOut = Join-Path $temp 'SC2KRepainter'
-    Expand-Archive -LiteralPath $repainterZip -DestinationPath $repainterOut -Force
-    $repainterExe = Get-ChildItem -LiteralPath $repainterOut -Recurse -File -Filter 'SC2KRepainter.exe' | Select-Object -First 1
-    if (-not $repainterExe) {
-        throw 'SC2KRepainter.exe was not in the downloaded archive.'
-    }
     $repainterPath = Join-Path $Paths.InstallDir 'SC2KRepainter.exe'
-    Move-Item -LiteralPath $repainterExe.FullName -Destination $repainterPath -Force
+    Save-File $RepainterUrl $repainterPath -Sha256 $RepainterSha256
 
     Write-Step 'Creating the launcher...'
     # Starts SC2KRepainter hidden, runs the game, then stops SC2KRepainter.
