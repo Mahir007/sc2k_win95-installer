@@ -648,6 +648,7 @@ function Install-Game {
         DisplayName     = $UninstallDisplayName
         DisplayVersion  = $ScriptVersion
         DisplayIcon     = $Paths.PatchedExe
+        Publisher       = 'Maxis, Inc.'
         InstallLocation = $Paths.InstallDir
         UninstallString = "`"$powershellExe`" $uninstallArgs"
     }
