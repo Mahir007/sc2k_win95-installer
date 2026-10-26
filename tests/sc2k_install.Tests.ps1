@@ -6,6 +6,9 @@ BeforeAll {
     function Invoke-Script {
         param([string[]]$Arguments)
         $exe = (Get-Process -Id $PID).Path
+        # Under Stop, Windows PowerShell 5.1 throws on a native command's
+        # redirected stderr instead of returning it
+        $ErrorActionPreference = 'Continue'
         $output = & $exe -NoProfile -ExecutionPolicy Bypass -File $ScriptPath @Arguments 2>&1
         [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = ($output | Out-String) }
     }
