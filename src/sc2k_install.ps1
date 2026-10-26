@@ -55,7 +55,9 @@ param(
 $ScriptVersion = '1.0.0'
 
 $AppName = 'SimCity 2000 Special Edition'
-$UninstallKeyName = 'SimCity2000SE'
+# The key name and display name the original Maxis installer registers
+$UninstallKeyName = 'SimCity2000CDv1'
+$UninstallDisplayName = "SimCity 2000$([char]0x00AE) Special Edition"
 $ScriptFileName = 'sc2k_install.ps1'
 
 function Get-Paths {
@@ -647,10 +649,9 @@ function Install-Game {
     New-Item -Path $Paths.UninstallKey -Force | Out-Null
     $sizeKb = [int]((Get-ChildItem -LiteralPath $Paths.InstallDir -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1KB)
     $entry = @{
-        DisplayName     = $AppName
+        DisplayName     = $UninstallDisplayName
         DisplayVersion  = $ScriptVersion
         DisplayIcon     = $Paths.PatchedExe
-        Publisher       = 'Maxis'
         InstallLocation = $Paths.InstallDir
         UninstallString = "`"$powershellExe`" $uninstallArgs"
     }
