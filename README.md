@@ -51,8 +51,7 @@ ship with the game are left out unless you saved over them.
 - Creates `C:\DATA` as a hidden link to the game's `DATA` folder. The game
   only plays its intro movies from there. This is why the script needs
   administrator rights.
-- Patches the game with [SC2000X](https://github.com/alekasm/SC2000X) and
-  sets it to run in 256-colour mode.
+- Patches the game with SC2000X and sets it to run in 256-colour mode.
 - Adds [SC2KRepainter](https://github.com/Guspaz/SC2KRepainter), which
   restores palette animation. The shortcuts start it
   alongside the game.
@@ -76,6 +75,17 @@ play.
 
 The ISO has no `WIN95\SC2K`, `WIN95\GOODIES` or `DATA` folder. It is probably
 not the Special Edition CD.
+
+## Credits
+
+- [SC2000X](https://github.com/alekasm/SC2000X) by Aleksander Krimsky
+  (alekasm), which patches the game to run on modern Windows. Its
+  repository no longer exists. This project downloads a copy of its last
+  release kept in [vendor/SC2000X](vendor/SC2000X), which isn't covered by
+  this project's license.
+- [SC2KRepainter](https://github.com/Guspaz/SC2KRepainter) by Guspaz.
+- [lessmsi](https://github.com/activescott/lessmsi) and
+  [7-Zip](https://github.com/ip7z/7zip), used to extract the ISO.
 
 ## License
 
