@@ -184,7 +184,8 @@ function Test-PathEntry {
 # Remove-Item -Recurse on a link can delete the target's contents in 5.1.
 function Remove-DirectoryLink {
     param([string]$Path)
-    [IO.Directory]::Delete($Path, $false)
+    # Non-recursive, and works on a link whose target is gone
+    (Get-Item -LiteralPath $Path -Force).Delete()
 }
 
 function Get-LatestAssetUrl {
@@ -408,6 +409,11 @@ function Install-DataLink {
     param($Paths)
 
     $link = $Paths.DataLink
+    # Left by a killed run whose install folder was then deleted. It's ours,
+    # so replace it without asking.
+    if (Test-LinkPointsTo -Path $link -Target $Paths.DataDir) {
+        Remove-DirectoryLink $link
+    }
     if (Test-PathEntry $link) {
         $backup = "$link.old"
         $n = 1

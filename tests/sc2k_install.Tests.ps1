@@ -83,6 +83,28 @@ Describe 'Get-UserCity' {
     }
 }
 
+Describe 'Install-DataLink' {
+    It 'replaces a leftover link to our own DATA folder without asking' {
+        Mock Read-Choice { throw 'Read-Choice should not be called' }
+        $base = Join-Path $TestDrive ([guid]::NewGuid())
+        New-Item -ItemType Directory -Path $base | Out-Null
+        $paths = [pscustomobject]@{
+            DataLink = Join-Path $base 'DATA'
+            DataDir  = Join-Path (Join-Path $base 'install') 'DATA'
+        }
+        # Target doesn't exist: the install folder was deleted after a killed run
+        New-Item -ItemType Directory -Path $paths.DataDir | Out-Null
+        New-Item -ItemType SymbolicLink -Path $paths.DataLink -Value $paths.DataDir | Out-Null
+        Remove-Item -LiteralPath $paths.DataDir
+        # The new install has moved its DATA folder in by the time it links
+        New-Item -ItemType Directory -Path $paths.DataDir | Out-Null
+
+        Install-DataLink $paths | Should -BeTrue
+        Should -Invoke Read-Choice -Times 0
+        Test-LinkPointsTo -Path $paths.DataLink -Target $paths.DataDir | Should -BeTrue
+    }
+}
+
 Describe 'Script file' {
     It 'is ASCII only, so Windows PowerShell 5.1 reads it correctly' {
         $bytes = [IO.File]::ReadAllBytes($ScriptPath)
