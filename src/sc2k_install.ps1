@@ -62,7 +62,8 @@ $ScriptFileName = 'sc2k_install.ps1'
 
 function Get-Paths {
     $installDir = Join-Path $env:LOCALAPPDATA "Programs\$AppName"
-    $startMenuDir = Join-Path ([Environment]::GetFolderPath('Programs')) $AppName
+    # The original installer's Start Menu folder. Other Maxis games use it too.
+    $startMenuDir = Join-Path ([Environment]::GetFolderPath('Programs')) 'Maxis'
 
     [pscustomobject]@{
         InstallDir      = $installDir
@@ -76,7 +77,9 @@ function Get-Paths {
         InstalledScript = Join-Path $installDir $ScriptFileName
         CityManifest    = Join-Path $installDir 'shipped-cities.txt'
         StartMenuDir    = $startMenuDir
-        DesktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'SimCity 2000.lnk'
+        GameShortcut    = Join-Path $startMenuDir 'SimCity 2000.lnk'
+        UrkShortcut     = Join-Path $startMenuDir 'SimCity Urban Renewal Kit.lnk'
+        UninstShortcut  = Join-Path $startMenuDir "Uninstall $UninstallDisplayName.lnk"
         UninstallKey    = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$UninstallKeyName"
         CompatKey       = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers'
         GameSettingsKey = 'HKCU:\Software\Maxis\SimCity 2000'
@@ -359,11 +362,13 @@ function Remove-Installation {
         Remove-DirectoryLink $Paths.DataLink
     }
 
-    if (Test-Path -LiteralPath $Paths.DesktopShortcut) {
-        Remove-Item -LiteralPath $Paths.DesktopShortcut -Force
+    foreach ($shortcut in $Paths.GameShortcut, $Paths.UrkShortcut, $Paths.UninstShortcut) {
+        if (Test-Path -LiteralPath $shortcut) {
+            Remove-Item -LiteralPath $shortcut -Force
+        }
     }
-    if (Test-Path -LiteralPath $Paths.StartMenuDir) {
-        Remove-Item -LiteralPath $Paths.StartMenuDir -Recurse -Force
+    if ((Test-Path -LiteralPath $Paths.StartMenuDir) -and -not (Get-ChildItem -LiteralPath $Paths.StartMenuDir -Force)) {
+        Remove-Item -LiteralPath $Paths.StartMenuDir -Force
     }
 
     if (Test-Path $Paths.CompatKey) {
@@ -630,19 +635,10 @@ function Install-Game {
     $uninstallArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$($Paths.InstalledScript)`" -Uninstall"
 
     Write-Step 'Creating shortcuts...'
-    $gameShortcut = @{
-        Target      = $Paths.Launcher
-        Description = 'Launch SimCity 2000 SE with SC2KRepainter'
-        Icon        = $Paths.PatchedExe
-    }
-    $answer = Read-Choice -Prompt 'Create a desktop shortcut? [Y/n]' -Choices 'Y', 'N' -Default 'Y'
-    if ($answer -eq 'Y') {
-        New-Shortcut -Path $Paths.DesktopShortcut @gameShortcut
-    }
     New-Item -ItemType Directory -Path $Paths.StartMenuDir -Force | Out-Null
-    New-Shortcut -Path (Join-Path $Paths.StartMenuDir 'SimCity 2000.lnk') @gameShortcut
-    New-Shortcut -Path (Join-Path $Paths.StartMenuDir 'SimCity Urban Renewal Kit.lnk') -Target $Paths.UrkExe -Icon $Paths.UrkExe
-    New-Shortcut -Path (Join-Path $Paths.StartMenuDir 'Uninstall SimCity 2000 SE.lnk') -Target $powershellExe -Arguments $uninstallArgs
+    New-Shortcut -Path $Paths.GameShortcut -Target $Paths.Launcher -Description 'Launch SimCity 2000 SE with SC2KRepainter' -Icon $Paths.PatchedExe
+    New-Shortcut -Path $Paths.UrkShortcut -Target $Paths.UrkExe -Icon $Paths.UrkExe
+    New-Shortcut -Path $Paths.UninstShortcut -Target $powershellExe -Arguments $uninstallArgs
 
     # Registers the install in Installed apps. This is what a re-run detects,
     # so it has to be the last step.
