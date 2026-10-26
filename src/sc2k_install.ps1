@@ -88,6 +88,11 @@ function Get-Paths {
         UninstallKey    = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$UninstallKeyName"
         CompatKey       = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers'
         GameSettingsKey = 'HKCU:\Software\Maxis\SimCity 2000'
+        MaxisKey        = 'HKCU:\Software\Maxis'
+        # Empty, like the one the original installer leaves in HKLM
+        ProductKey      = "HKCU:\Software\Maxis\$UninstallDisplayName\1.0"
+        ClassesKey      = 'HKCU:\Software\Classes'
+        AppPathsKey     = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths'
         # Remembers where an existing C:\DATA was moved to, so it can be put back
         StateKey        = 'HKCU:\Software\SimCity2000SE-Installer'
     }
@@ -357,6 +362,94 @@ function Restore-DataFolder {
     Remove-Item -Path $Paths.StateKey -Recurse -Force
 }
 
+# File types the original installer registers. Program is the Get-Paths
+# property for the exe that opens them and provides the icon.
+$FileTypes = @(
+    @{ Extension = '.sc2'; ProgId = 'SimCity2000.Document.City'; Name = 'SimCity 2000 City'; Program = 'PatchedExe'; Icon = 1 }
+    @{ Extension = '.scn'; ProgId = 'SimCity2000.Document.Scenario'; Name = 'SimCity 2000 Scenario'; Program = 'PatchedExe'; Icon = 2 }
+    @{ Extension = '.mif'; ProgId = 'SimCity2000.Document.TileSet'; Name = 'SimCity 2000 Graphics Set'; Program = 'UrkExe'; Icon = 1 }
+)
+
+# App Paths the original installer registers, by the name Run resolves, and
+# the Get-Paths property each points at
+$AppPaths = @{ 'SimCity.exe' = 'PatchedExe'; 'WinScurk.exe' = 'UrkExe' }
+
+function Set-KeyDefault {
+    param([string]$Key, [string]$Value)
+    if (-not (Test-Path -LiteralPath $Key)) {
+        New-Item -Path $Key -Force | Out-Null
+    }
+    Set-ItemProperty -LiteralPath $Key -Name '(default)' -Value $Value
+}
+
+function Remove-EmptyKey {
+    param([string]$Key)
+    $item = Get-Item -LiteralPath $Key -ErrorAction SilentlyContinue
+    if ($item -and $item.SubKeyCount -eq 0 -and $item.ValueCount -eq 0) {
+        Remove-Item -LiteralPath $Key -Force
+    }
+}
+
+# Tells Explorer to pick up new or removed file types and icons
+function Update-ShellAssociation {
+    try {
+        if (-not ('Sc2kInstaller.Shell' -as [type])) {
+            Add-Type -Namespace Sc2kInstaller -Name Shell -MemberDefinition '[DllImport("shell32.dll")] public static extern void SHChangeNotify(int eventId, uint flags, System.IntPtr item1, System.IntPtr item2);'
+        }
+        # SHCNE_ASSOCCHANGED, SHCNF_IDLIST
+        [Sc2kInstaller.Shell]::SHChangeNotify(0x08000000, 0, [IntPtr]::Zero, [IntPtr]::Zero)
+    } catch {
+        Write-Verbose "SHChangeNotify failed: $($_.Exception.Message)"
+    }
+}
+
+# Registers the file types per user, with the same names and icons the
+# original installer uses. Cities and scenarios open through the launcher so
+# SC2KRepainter runs too.
+function Register-FileAssociation {
+    param($Paths)
+
+    $wscript = Join-Path $env:SystemRoot 'System32\wscript.exe'
+    foreach ($type in $FileTypes) {
+        $progId = Join-Path $Paths.ClassesKey $type.ProgId
+        $exe = $Paths.($type.Program)
+        if ($exe -eq $Paths.PatchedExe) {
+            $command = "`"$wscript`" `"$($Paths.Launcher)`" `"%1`""
+        } else {
+            $command = "`"$exe`" %1"
+        }
+        Set-KeyDefault $progId $type.Name
+        Set-KeyDefault "$progId\DefaultIcon" "$exe,$($type.Icon)"
+        Set-KeyDefault "$progId\shell\open\command" $command
+        Set-KeyDefault (Join-Path $Paths.ClassesKey $type.Extension) $type.ProgId
+    }
+    Update-ShellAssociation
+}
+
+function Remove-FileAssociation {
+    param($Paths)
+
+    $changed = $false
+    foreach ($type in $FileTypes) {
+        $progId = Join-Path $Paths.ClassesKey $type.ProgId
+        if (Test-Path -LiteralPath $progId) {
+            Remove-Item -LiteralPath $progId -Recurse -Force
+            $changed = $true
+        }
+        # Leave the extension alone if something else has taken it over
+        $ext = Join-Path $Paths.ClassesKey $type.Extension
+        $item = Get-Item -LiteralPath $ext -ErrorAction SilentlyContinue
+        if ($item -and $item.GetValue('') -eq $type.ProgId) {
+            Remove-ItemProperty -LiteralPath $ext -Name '(default)'
+            Remove-EmptyKey $ext
+            $changed = $true
+        }
+    }
+    if ($changed) {
+        Update-ShellAssociation
+    }
+}
+
 # Removes everything an install creates. Used by uninstall, by reinstall, and
 # to roll back a failed install. -KeepDataBackup leaves a moved C:\DATA where
 # it is, for when a new install follows.
@@ -382,6 +475,18 @@ function Remove-Installation {
     if (Test-Path $Paths.UninstallKey) {
         Remove-Item -Path $Paths.UninstallKey -Recurse -Force
     }
+    Remove-FileAssociation $Paths
+    foreach ($exe in $AppPaths.Keys) {
+        $key = Join-Path $Paths.AppPathsKey $exe
+        if (Test-Path -LiteralPath $key) {
+            Remove-Item -LiteralPath $key -Recurse -Force
+        }
+    }
+    $productKey = Split-Path $Paths.ProductKey
+    if (Test-Path -LiteralPath $productKey) {
+        Remove-Item -LiteralPath $productKey -Recurse -Force
+    }
+    Remove-EmptyKey $Paths.MaxisKey
 
     if (Test-Path -LiteralPath $Paths.InstallDir) {
         # Can't delete the folder we're standing in
@@ -410,6 +515,7 @@ function Invoke-Uninstall {
     if (Test-Path $Paths.GameSettingsKey) {
         Remove-Item -Path $Paths.GameSettingsKey -Recurse -Force
     }
+    Remove-EmptyKey $Paths.MaxisKey
 
     Write-Host "$AppName has been uninstalled." -ForegroundColor Green
     0
@@ -615,11 +721,15 @@ function Install-Game {
     Move-Item -LiteralPath $repainterExe.FullName -Destination $repainterPath -Force
 
     Write-Step 'Creating the launcher...'
-    # Starts SC2KRepainter hidden, runs the game, then stops SC2KRepainter
+    # Starts SC2KRepainter hidden, runs the game, then stops SC2KRepainter.
+    # A file passed in goes to the game unquoted, as the original file
+    # association passes it.
     @(
         'Set WshShell = CreateObject("WScript.Shell")'
+        'cityArg = ""'
+        'If WScript.Arguments.Count > 0 Then cityArg = " " & WScript.Arguments(0)'
         "WshShell.Run chr(34) & `"$repainterPath`" & chr(34), 0"
-        "WshShell.Run chr(34) & `"$($Paths.PatchedExe)`" & chr(34), 1, True"
+        "WshShell.Run chr(34) & `"$($Paths.PatchedExe)`" & chr(34) & cityArg, 1, True"
         'WshShell.Run "taskkill /im SC2KRepainter.exe /f", 0, True'
         'Set WshShell = Nothing'
     ) | Set-Content -LiteralPath $Paths.Launcher -Encoding ASCII
@@ -641,6 +751,16 @@ function Install-Game {
     }
     $powershellExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $uninstallArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$($Paths.InstalledScript)`" -Uninstall"
+
+    Write-Step 'Registering file types...'
+    Register-FileAssociation $Paths
+    foreach ($exe in $AppPaths.Keys) {
+        $key = Join-Path $Paths.AppPathsKey $exe
+        $target = $Paths.($AppPaths[$exe])
+        Set-KeyDefault $key $target
+        New-ItemProperty -LiteralPath $key -Name 'Path' -Value (Split-Path $target) -PropertyType String -Force | Out-Null
+    }
+    New-Item -Path $Paths.ProductKey -Force | Out-Null
 
     Write-Step 'Creating shortcuts...'
     $gameShortcut = @{
