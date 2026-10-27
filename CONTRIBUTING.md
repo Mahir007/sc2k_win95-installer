@@ -49,6 +49,7 @@ git push origin v1.0.0
 ```
 
 The script in the repository says its version is `0.0.0-dev`. The release
-workflow puts the tag's version in a copy of it and creates a GitHub release
-with that copy attached and notes generated from the commits. A tag such as
+workflow puts the tag's version in a copy of it, packs that copy and `LICENSE`
+into `sc2k_install.zip`, and creates a GitHub release with the archive attached
+and notes generated from the commits. A tag such as
 `v1.0.0-preview.1` becomes a pre-release.
