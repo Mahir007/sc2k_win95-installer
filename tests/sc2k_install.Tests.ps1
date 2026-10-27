@@ -15,10 +15,11 @@ BeforeAll {
 }
 
 Describe 'Parameters' {
-    It 'prints the version for -Version' {
+    # The release workflow puts the tag's version in the copy it publishes
+    It 'prints the version for -Version, which is 0.0.0-dev outside a release' {
         $r = Invoke-Script @('-Version')
         $r.ExitCode | Should -Be 0
-        $r.Output.Trim() | Should -Be $ScriptVersion
+        $r.Output.Trim() | Should -Be '0.0.0-dev'
     }
 
     It 'has comment-based help' {

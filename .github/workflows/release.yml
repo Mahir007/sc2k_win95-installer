@@ -12,14 +12,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check the tag matches the script version
+      # The script in the repository says its version is 0.0.0-dev; the copy
+      # in the release gets the tag's.
+      - name: Put the tag's version in the script
         run: |
-          version=$(sed -n "s/^\$ScriptVersion = '\(.*\)'.*/\1/p" src/sc2k_install.ps1)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match \$ScriptVersion $version" >&2
+          version=${GITHUB_REF_NAME#v}
+          if [[ ! $GITHUB_REF_NAME =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-preview\.[0-9]+)?$ ]]; then
+            echo "$GITHUB_REF_NAME isn't a version tag, such as v1.0.0 or v1.0.0-preview.1" >&2
             exit 1
           fi
+          mkdir dist
+          sed "s/^\$ScriptVersion = '0\.0\.0-dev'/\$ScriptVersion = '$version'/" src/sc2k_install.ps1 >dist/sc2k_install.ps1
+          if ! grep -qF "\$ScriptVersion = '$version'" dist/sc2k_install.ps1; then
+            echo "src/sc2k_install.ps1 has no \$ScriptVersion = '0.0.0-dev' line to put the version in" >&2
+            exit 1
+          fi
+      # A version with a hyphen, such as 1.0.0-preview.1, is a pre-release.
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" src/sc2k_install.ps1 --title "$GITHUB_REF_NAME" --generate-notes
+        run: |
+          flags=()
+          if [[ $GITHUB_REF_NAME == *-* ]]; then
+            flags=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/sc2k_install.ps1 --title "$GITHUB_REF_NAME" --generate-notes --verify-tag "${flags[@]}"
