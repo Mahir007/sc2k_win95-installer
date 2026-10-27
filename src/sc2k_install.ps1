@@ -52,7 +52,7 @@ param(
 # Must stay compatible with Windows PowerShell 5.1, and ASCII-only because 5.1
 # reads files without a BOM as ANSI.
 
-$ScriptVersion = '1.0.0'
+$ScriptVersion = '0.0.0-dev'
 
 $AppName = 'SimCity 2000 Special Edition'
 # The key name and display name the original Maxis installer registers

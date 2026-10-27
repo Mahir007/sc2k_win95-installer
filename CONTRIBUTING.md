@@ -41,9 +41,14 @@ breaking change the major.
 
 ## Releasing
 
-1. Set `$ScriptVersion` in `src/sc2k_install.ps1` and commit it as
-   `chore(release): X.Y.Z`.
-2. Tag the commit `vX.Y.Z` and push the tag.
+Tag a commit on `main` and push the tag:
 
-The release workflow checks the tag matches `$ScriptVersion`, then creates a
-GitHub release with the script attached and notes generated from the commits.
+```sh
+git tag -a v1.0.0 -m "1.0.0"
+git push origin v1.0.0
+```
+
+The script in the repository says its version is `0.0.0-dev`. The release
+workflow puts the tag's version in a copy of it and creates a GitHub release
+with that copy attached and notes generated from the commits. A tag such as
+`v1.0.0-preview.1` becomes a pre-release.
