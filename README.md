@@ -5,8 +5,8 @@ and 11 from an ISO of the original CD.
 
 ## Quick start
 
-1. Download `sc2k_install.ps1` from the
-   [latest release](https://github.com/Mahir007/sc2k_win95-installer/releases/latest).
+1. Download [sc2k_install.zip](https://github.com/Mahir007/sc2k_win95-installer/releases/latest/download/sc2k_install.zip)
+   from the latest release and extract `sc2k_install.ps1` from it.
 2. Right-click it and choose Run with PowerShell. Accept the administrator
    prompt.
 3. Select your SimCity 2000 Special Edition ISO.

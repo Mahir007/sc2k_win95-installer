@@ -27,6 +27,13 @@ jobs:
             echo "src/sc2k_install.ps1 has no \$ScriptVersion = '0.0.0-dev' line to put the version in" >&2
             exit 1
           fi
+      # The same commit always gives the same archive: the files get the
+      # commit's time instead of the checkout's.
+      - name: Build the archive
+        run: |
+          cp LICENSE dist/LICENSE
+          touch -d "@$(git log -1 --format=%ct)" dist/LICENSE dist/sc2k_install.ps1
+          cd dist && 7z a -tzip -mx=9 -bd sc2k_install.zip LICENSE sc2k_install.ps1
       # A version with a hyphen, such as 1.0.0-preview.1, is a pre-release.
       - name: Create release
         env:
@@ -36,4 +43,4 @@ jobs:
           if [[ $GITHUB_REF_NAME == *-* ]]; then
             flags=(--prerelease)
           fi
-          gh release create "$GITHUB_REF_NAME" dist/sc2k_install.ps1 --title "$GITHUB_REF_NAME" --generate-notes --verify-tag "${flags[@]}"
+          gh release create "$GITHUB_REF_NAME" dist/sc2k_install.zip --title "$GITHUB_REF_NAME" --generate-notes --verify-tag "${flags[@]}"
