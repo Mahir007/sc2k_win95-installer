@@ -621,16 +621,17 @@ function Invoke-Install {
 
     Write-Step 'Downloading 7-Zip...'
     Save-File (Get-LatestAssetUrl 'ip7z/7zip' '*x64.msi') (Join-Path $temp '7zip.msi')
-    # lessmsi needs the output folder to end in a backslash. A relative path
-    # avoids quoting a trailing backslash on the command line.
+    # lessmsi needs the output folder to end in a backslash, and rejects '.\'.
+    # A relative path avoids quoting a trailing backslash on the command line.
     Push-Location $temp
     try {
-        & (Join-Path $lessmsiDir 'lessmsi.exe') xfo '7zip.msi' '.\' '7z.exe' '7z.dll' | Out-Null
+        $output = & (Join-Path $lessmsiDir 'lessmsi.exe') xfo '7zip.msi' '7zip\' '7z.exe' '7z.dll'
     } finally {
         Pop-Location
     }
-    $sevenZip = Join-Path $temp '7z.exe'
-    if (-not (Test-Path -LiteralPath $sevenZip)) {
+    $sevenZip = Join-Path $temp '7zip\7z.exe'
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $sevenZip)) {
+        $output | Out-Host
         throw 'Failed to extract 7z.exe from the 7-Zip MSI.'
     }
 
