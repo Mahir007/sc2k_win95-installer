@@ -114,7 +114,7 @@ function Format-ReleaseNotes {
 
     $lines.Add("## $($Emoji.Download) Download")
     $lines.Add('')
-    $lines.Add('| File | |')
+    $lines.Add('| File | Contents |')
     $lines.Add('| --- | --- |')
     $lines.Add("| [$ArchiveName]($download/$ArchiveName) | The installer and its license |")
     $lines.Add("| [$ArchiveName.sha256]($download/$ArchiveName.sha256) | The archive's SHA-256 |")
@@ -123,7 +123,7 @@ function Format-ReleaseNotes {
     $lines.Add('')
     $lines.Add("### $($Emoji.Verify) Verify the download")
     $lines.Add('')
-    $lines.Add("Download both files, then run this in PowerShell in the folder they're in. It prints ``True`` if the archive is intact.")
+    $lines.Add("Delete older copies first, so your browser doesn't rename the new ones. Then download both files and run this in PowerShell in their folder. It prints ``True`` if the archive is intact.")
     $lines.Add('')
     $lines.Add('```powershell')
     $lines.Add("`$hash, `$file = (Get-Content $ArchiveName.sha256) -split '\s+'; (Get-FileHash `$file).Hash -eq `$hash")
