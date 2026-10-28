@@ -18,6 +18,10 @@ Uninstall the game.
 .PARAMETER Version
 Print the script version.
 
+.PARAMETER GitHubToken
+Development copies only. A GitHub personal access token for the API calls
+that find the latest lessmsi and 7-Zip.
+
 .PARAMETER Relaunched
 Used internally when the script restarts itself with administrator rights.
 
@@ -38,6 +42,10 @@ param(
 
     [Parameter(ParameterSetName = 'Install')]
     [switch]$Reinstall,
+
+    [Parameter(ParameterSetName = 'Install', DontShow = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$GitHubToken,
 
     [Parameter(ParameterSetName = 'Uninstall', Mandatory = $true)]
     [switch]$Uninstall,
@@ -218,9 +226,11 @@ function Remove-DirectoryLink {
 }
 
 function Get-LatestAssetUrl {
-    param([string]$Repo, [string]$Pattern)
+    param([string]$Repo, [string]$Pattern, [string]$Token)
 
-    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -UseBasicParsing
+    $headers = @{}
+    if ($Token) { $headers['Authorization'] = "Bearer $Token" }
+    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -Headers $headers -UseBasicParsing
     $asset = $release.assets | Where-Object { $_.name -like $Pattern } | Select-Object -First 1
     if (-not $asset) {
         throw "No download matching '$Pattern' in the latest $Repo release."
@@ -595,7 +605,7 @@ function Install-DataLink {
 }
 
 function Invoke-Install {
-    param($Paths, [string]$Iso, [bool]$IsReinstall)
+    param($Paths, [string]$Iso, [bool]$IsReinstall, [string]$GitHubToken)
 
     $isoPath = $Iso
     if (-not $isoPath) { $isoPath = Select-IsoFile }
@@ -622,7 +632,7 @@ function Invoke-Install {
     # is pulled out of the 7-Zip MSI with lessmsi.
     Write-Step 'Downloading lessmsi...'
     $lessmsiZip = Join-Path $temp 'lessmsi.zip'
-    Save-File (Get-LatestAssetUrl 'activescott/lessmsi' 'lessmsi-v*.zip') $lessmsiZip
+    Save-File (Get-LatestAssetUrl -Repo 'activescott/lessmsi' -Pattern 'lessmsi-v*.zip' -Token $GitHubToken) $lessmsiZip
     # Not Expand-Archive: as a module function it ignores $ProgressPreference
     # set here and draws a progress bar.
     Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -630,7 +640,7 @@ function Invoke-Install {
     [IO.Compression.ZipFile]::ExtractToDirectory($lessmsiZip, $lessmsiDir)
 
     Write-Step 'Downloading 7-Zip...'
-    Save-File (Get-LatestAssetUrl 'ip7z/7zip' '*x64.msi') (Join-Path $temp '7zip.msi')
+    Save-File (Get-LatestAssetUrl -Repo 'ip7z/7zip' -Pattern '*x64.msi' -Token $GitHubToken) (Join-Path $temp '7zip.msi')
     # lessmsi needs the output folder to end in a backslash, and rejects '.\'.
     # A relative path avoids quoting a trailing backslash on the command line.
     Push-Location $temp
@@ -847,6 +857,11 @@ function Invoke-Main {
         return 0
     }
 
+    if ($Bound['GitHubToken'] -and $ScriptVersion -ne '0.0.0-dev') {
+        Write-Host '-GitHubToken only works in a development copy of the script.' -ForegroundColor Red
+        return 1
+    }
+
     if ($env:OS -ne 'Windows_NT') {
         Write-Host 'This script only runs on Windows.' -ForegroundColor Red
         return 1
@@ -900,7 +915,7 @@ function Invoke-Main {
         } elseif ($existing -and -not $Bound['Reinstall']) {
             Write-Host "$AppName is already installed (installer $($existing.Version)) at $($paths.InstallDir)"
             switch (Read-Choice -Prompt '(R)einstall, (U)ninstall, or (C)ancel?' -Choices 'R', 'U', 'C') {
-                'R' { $exitCode = Invoke-Install -Paths $paths -Iso $Bound['Iso'] -IsReinstall $true }
+                'R' { $exitCode = Invoke-Install -Paths $paths -Iso $Bound['Iso'] -IsReinstall $true -GitHubToken $Bound['GitHubToken'] }
                 'U' { $exitCode = Invoke-Uninstall $paths }
                 'C' {
                     Write-Host 'Cancelled.'
@@ -908,7 +923,7 @@ function Invoke-Main {
                 }
             }
         } else {
-            $exitCode = Invoke-Install -Paths $paths -Iso $Bound['Iso'] -IsReinstall ([bool]$existing)
+            $exitCode = Invoke-Install -Paths $paths -Iso $Bound['Iso'] -IsReinstall ([bool]$existing) -GitHubToken $Bound['GitHubToken']
         }
     } catch {
         Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red

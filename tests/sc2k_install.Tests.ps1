@@ -33,8 +33,15 @@ Describe 'Parameters' {
         @{ Case = '-Uninstall with -Reinstall'; Arguments = @('-Uninstall', '-Reinstall') }
         @{ Case = '-Uninstall with -Iso'; Arguments = @('-Uninstall', '-Iso', 'x.iso') }
         @{ Case = '-Iso without a path'; Arguments = @('-Iso') }
+        @{ Case = '-Uninstall with -GitHubToken'; Arguments = @('-Uninstall', '-GitHubToken', 'x') }
     ) {
         (Invoke-Script $Arguments).ExitCode | Should -Not -Be 0
+    }
+
+    It 'refuses -GitHubToken in a released copy' {
+        # Invoke-Main sees this copy of the variable
+        Set-Variable -Name ScriptVersion -Value '1.0.0'
+        Invoke-Main @{ GitHubToken = 'x' } 6>$null | Should -Be 1
     }
 }
 
