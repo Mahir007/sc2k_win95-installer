@@ -26,6 +26,20 @@ The tests cover the parameters and the helpers that don't need Windows,
 so they also run on Linux and macOS. CI runs them on Windows under
 both 5.1 and 7.
 
+## Running a development copy
+
+Each install looks up the latest lessmsi and 7-Zip through the GitHub API,
+which allows 60 requests an hour per IP address without a token. To test
+repeatedly, pass a personal access token. A classic token with no scopes, or
+a fine-grained token with public repository access, is enough:
+
+```
+powershell -ExecutionPolicy Bypass -File .\src\sc2k_install.ps1 -GitHubToken <token>
+```
+
+The token is forwarded on the command line of the elevated PowerShell window.
+Released copies refuse `-GitHubToken`.
+
 ## Commits
 
 Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
