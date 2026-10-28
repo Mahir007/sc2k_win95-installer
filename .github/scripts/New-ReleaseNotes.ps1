@@ -130,10 +130,14 @@ function Format-ReleaseNotes {
     $lines.Add('```')
     $lines.Add('')
 
+    # A feature or fix scoped to the tooling, such as fix(ci), doesn't change
+    # the installer, so it goes with the other changes
+    $toolingScopes = 'ci', 'build', 'docs', 'test'
     $breaking = @($Commits | Where-Object { $_.Breaking })
-    $features = @($Commits | Where-Object { -not $_.Breaking -and $_.Type -eq 'feat' })
-    $fixes = @($Commits | Where-Object { -not $_.Breaking -and $_.Type -eq 'fix' })
-    $others = @($Commits | Where-Object { -not $_.Breaking -and $_.Type -notin 'feat', 'fix' })
+    $userFacing = @($Commits | Where-Object { -not $_.Breaking -and $_.Type -in 'feat', 'fix' -and $_.Scope -notin $toolingScopes })
+    $features = @($userFacing | Where-Object { $_.Type -eq 'feat' })
+    $fixes = @($userFacing | Where-Object { $_.Type -eq 'fix' })
+    $others = @($Commits | Where-Object { -not $_.Breaking -and $_ -notin $userFacing })
 
     $lines.Add("## $($Emoji.Changes) What's changed")
     $lines.Add('')
