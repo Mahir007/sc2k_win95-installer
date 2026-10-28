@@ -226,7 +226,21 @@ function Start-Elevated {
     Write-Host 'Requesting administrator rights...'
     $hostExe = (Get-Process -Id $PID).Path
     $forwarded = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath) + (ConvertTo-ParameterList $Bound) + '-Relaunched'
-    Start-Process -FilePath $hostExe -ArgumentList (ConvertTo-ArgumentString $forwarded) -Verb RunAs | Out-Null
+    $info = New-Object Diagnostics.ProcessStartInfo $hostExe, (ConvertTo-ArgumentString $forwarded)
+    $info.Verb = 'RunAs'
+    $info.UseShellExecute = $true
+    # Not Start-Process: in 5.1 its error loses the Windows error code
+    try {
+        [void][Diagnostics.Process]::Start($info)
+    } catch {
+        $e = $_.Exception
+        while ($e -and $e -isnot [ComponentModel.Win32Exception]) { $e = $e.InnerException }
+        # ERROR_CANCELLED: the UAC prompt was declined
+        if ($e -and $e.NativeErrorCode -eq 1223) {
+            throw 'Administrator rights were not granted.'
+        }
+        throw
+    }
 }
 
 # An install is detected by the Installed apps entry, which is written as the
