@@ -89,6 +89,12 @@ Describe 'Format-ReleaseNotes' {
         ([regex]::Matches($notes, 'Rewrite it')).Count | Should -Be 1
     }
 
+    It 'puts a fix scoped to the tooling with the other changes' {
+        $notes = Get-Notes -Commits @(New-Commit 'fix(ci): mend the workflow')
+        $notes | Should -Not -Match 'Bug fixes'
+        $notes | Should -Match 'Other changes \(1\)</summary>\n\n- fix\(ci\): mend the workflow \('
+    }
+
     It 'says so when no commit changes the installer' {
         Get-Notes -Commits @(New-Commit 'ci: tweak') | Should -Match 'No changes to the installer itself'
     }

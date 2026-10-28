@@ -85,8 +85,9 @@ pre-release.
 subjects since the previous tag, so write them for users. A release is compared
 with the previous release, skipping pre-releases, so its notes cover everything
 since then. Features, fixes and breaking changes get their own sections, with
-the text of a `BREAKING CHANGE:` footer. Commits of other types go under a
-collapsed list. To preview the notes for a tag:
+the text of a `BREAKING CHANGE:` footer. Other commits go under a collapsed
+list, including features and fixes scoped to `ci`, `build`, `docs` or `test`.
+To preview the notes for a tag:
 
 ```
 ./.github/scripts/New-ReleaseNotes.ps1 -Tag v1.0.0 -Repository Mahir007/sc2k_win95-installer -ArchiveName sc2k_install.zip -OutFile notes.md
