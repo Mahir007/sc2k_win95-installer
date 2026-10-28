@@ -23,9 +23,14 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
 Invoke-Pester -Path tests
 ```
 
-The tests cover the parameters and the helpers that don't need Windows,
-so they also run on Linux and macOS. CI runs them on Windows under
-both 5.1 and 7.
+On Linux and macOS the tests cover the parameters and the helpers. On
+Windows they also install, reinstall and uninstall the game, with every
+folder and registry key moved into Pester's temporary ones, and with the
+downloads, the ISO, SC2000X and the prompts replaced. Like the install, they
+create a symbolic link, so they need an administrator window or Developer
+Mode. CI runs everything on Windows under both 5.1 and 7, as administrator.
+
+What the tests replace is checked by hand, in `tests/manual-results.md`.
 
 ## Running a development copy
 
