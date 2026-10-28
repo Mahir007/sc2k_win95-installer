@@ -130,6 +130,15 @@ function Read-Choice {
     }
 }
 
+function Read-NonEmpty {
+    param([string]$Prompt)
+
+    while ($true) {
+        $answer = (Read-Host $Prompt).Trim()
+        if ($answer) { return $answer }
+    }
+}
+
 function Test-IsAdmin {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal $identity
@@ -709,23 +718,26 @@ function Install-Game {
     $sc2000x = Join-Path $temp 'SC2000X.exe'
     Save-File $Sc2000xUrl $sc2000x -Sha256 $Sc2000xSha256
 
-    Set-Clipboard -Value $Paths.GameExe
+    # SC2000X asks for these when it registers the game
+    Write-Host ''
+    $mayor = Read-NonEmpty 'Mayor name'
+    $company = Read-NonEmpty 'Company name'
+
+    # SC2000X reads its answers from stdin, in this order: the game's path,
+    # install, mayor, company, patch. Its closing "press any key" reads the
+    # console directly, so the user still has to press a key.
+    $answers = Join-Path $temp 'sc2000x-input.txt'
+    Set-Content -LiteralPath $answers -Value $Paths.GameExe, 'y', $mayor, $company, 'y' -Encoding Default
     $border = '+------------------------------------------------------------------+'
     Write-Host ''
     Write-Host $border -ForegroundColor Yellow
-    foreach ($line in @(
-            'The path to SIMCITY.EXE has been copied to your clipboard.',
-            'RIGHT-CLICK to paste it when SC2000X asks for it.',
-            '',
-            'Press ENTER once SC2000X shows green text saying it is finished.')) {
-        Write-Host '|  ' -ForegroundColor Yellow -NoNewline
-        Write-Host $line.PadRight(64) -NoNewline
-        Write-Host '|' -ForegroundColor Yellow
-    }
+    Write-Host '|  ' -ForegroundColor Yellow -NoNewline
+    Write-Host 'Press any key once SC2000X says it is finished.'.PadRight(64) -NoNewline
+    Write-Host '|' -ForegroundColor Yellow
     Write-Host $border -ForegroundColor Yellow
     Write-Host ''
     # Start-Process keeps SC2000X's output out of this function's return value
-    Start-Process -FilePath $sc2000x -NoNewWindow -Wait
+    Start-Process -FilePath $sc2000x -NoNewWindow -Wait -RedirectStandardInput $answers
     if (-not (Test-Path -LiteralPath $Paths.PatchedExe)) {
         throw "SC2000X didn't create $($Paths.PatchedExe). Run the installer again."
     }
