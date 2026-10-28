@@ -37,6 +37,13 @@ a fine-grained token with public repository access, is enough:
 powershell -ExecutionPolicy Bypass -File .\src\sc2k_install.ps1 -GitHubToken <token>
 ```
 
+To keep the token out of PowerShell's history, read it into a variable first:
+
+```
+$t = Read-Host 'Token' -AsSecureString | ForEach-Object { [Net.NetworkCredential]::new('', $_).Password }
+powershell -ExecutionPolicy Bypass -File .\src\sc2k_install.ps1 -GitHubToken $t
+```
+
 The token is forwarded on the command line of the elevated PowerShell window.
 Released copies refuse `-GitHubToken`.
 
