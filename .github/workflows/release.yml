@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        # The notes need the history and tags back to the previous release
+        with:
+          fetch-depth: 0
       # The script in the repository says its version is 0.0.0-dev; the copy
       # in the release gets the tag's.
       - name: Put the tag's version in the script
@@ -34,6 +37,11 @@ jobs:
           cp LICENSE dist/LICENSE
           touch -d "@$(git log -1 --format=%ct)" dist/LICENSE dist/sc2k_install.ps1
           cd dist && 7z a -tzip -mx=9 -bd sc2k_install.zip LICENSE sc2k_install.ps1
+      - name: Write the checksum
+        run: cd dist && sha256sum sc2k_install.zip >sc2k_install.zip.sha256
+      - name: Write the release notes
+        shell: pwsh
+        run: ./.github/scripts/New-ReleaseNotes.ps1 -Tag $env:GITHUB_REF_NAME -Repository $env:GITHUB_REPOSITORY -ArchiveName sc2k_install.zip -OutFile dist/notes.md
       # A version with a hyphen, such as 1.0.0-preview.1, is a pre-release.
       - name: Create release
         env:
@@ -43,4 +51,4 @@ jobs:
           if [[ $GITHUB_REF_NAME == *-* ]]; then
             flags=(--prerelease)
           fi
-          gh release create "$GITHUB_REF_NAME" dist/sc2k_install.zip --title "$GITHUB_REF_NAME" --generate-notes --verify-tag "${flags[@]}"
+          gh release create "$GITHUB_REF_NAME" dist/sc2k_install.zip dist/sc2k_install.zip.sha256 --title "$GITHUB_REF_NAME" --notes-file dist/notes.md --verify-tag "${flags[@]}"

@@ -71,6 +71,17 @@ git push origin v1.0.0
 
 The script in the repository says its version is `0.0.0-dev`. The release
 workflow puts the tag's version in a copy of it, packs that copy and `LICENSE`
-into `sc2k_install.zip`, and creates a GitHub release with the archive attached
-and notes generated from the commits. A tag such as
-`v1.0.0-preview.1` becomes a pre-release.
+into `sc2k_install.zip`, and creates a GitHub release with the archive and its
+SHA-256 in `sc2k_install.zip.sha256`. A tag such as `v1.0.0-preview.1` becomes a
+pre-release.
+
+`.github/scripts/New-ReleaseNotes.ps1` writes the release notes from the commit
+subjects since the previous tag, so write them for users. A release is compared
+with the previous release, skipping pre-releases, so its notes cover everything
+since then. Features, fixes and breaking changes get their own sections, with
+the text of a `BREAKING CHANGE:` footer. Commits of other types go under a
+collapsed list. To preview the notes for a tag:
+
+```
+./.github/scripts/New-ReleaseNotes.ps1 -Tag v1.0.0 -Repository Mahir007/sc2k_win95-installer -ArchiveName sc2k_install.zip -OutFile notes.md
+```
