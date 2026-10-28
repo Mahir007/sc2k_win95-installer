@@ -10,8 +10,8 @@ and 11 from an ISO of the original CD.
 2. Right-click it and choose Run with PowerShell. Accept the administrator
    prompt.
 3. Select your SimCity 2000 Special Edition ISO.
-4. Enter a mayor and company name, then press any key once SC2000X says it
-   has finished.
+4. Type a mayor and company name, or press Enter to keep the defaults. Press
+   any key once SC2000X says it has finished.
 
 Launch the game from Start Menu > Maxis > SimCity 2000, or from the desktop
 shortcut if you chose to create one.

@@ -139,13 +139,53 @@ function Read-Choice {
     }
 }
 
-function Read-NonEmpty {
-    param([string]$Prompt)
+# Reads a line with $Default shown selected, like a text box in the original
+# installer: typing replaces it and Enter keeps it. An empty answer also
+# gives $Default.
+function Read-WithDefault {
+    param([string]$Prompt, [string]$Default)
 
-    while ($true) {
-        $answer = (Read-Host $Prompt).Trim()
+    if ([Console]::IsInputRedirected) {
+        $answer = (Read-Host "$Prompt [$Default]").Trim()
         if ($answer) { return $answer }
+        return $Default
     }
+
+    Write-Host "${Prompt}: " -NoNewline
+    $left = [Console]::CursorLeft
+    $top = [Console]::CursorTop
+    # Swapped colours, to look selected
+    Write-Host $Default -NoNewline -ForegroundColor ([Console]::BackgroundColor) -BackgroundColor ([Console]::ForegroundColor)
+    $selected = $true
+    $text = ''
+    while ($true) {
+        $key = [Console]::ReadKey($true)
+        if ($key.Key -eq 'Enter') { break }
+        $typed = -not [char]::IsControl($key.KeyChar)
+        if ($selected -and ($typed -or $key.Key -eq 'Backspace' -or $key.Key -eq 'Delete')) {
+            [Console]::SetCursorPosition($left, $top)
+            Write-Host (' ' * $Default.Length) -NoNewline
+            [Console]::SetCursorPosition($left, $top)
+            $selected = $false
+        } elseif ($key.Key -eq 'Backspace' -and $text) {
+            $text = $text.Substring(0, $text.Length - 1)
+            Write-Host "`b `b" -NoNewline
+        }
+        if ($typed) {
+            $text += $key.KeyChar
+            Write-Host $key.KeyChar -NoNewline
+        }
+    }
+    $text = $text.Trim()
+    if (-not $selected -and -not $text) {
+        # Show the name that will be used
+        [Console]::SetCursorPosition($left, $top)
+        Write-Host $Default -NoNewline
+    }
+    Write-Host ''
+
+    if ($selected -or -not $text) { return $Default }
+    $text
 }
 
 function Test-IsAdmin {
@@ -733,10 +773,11 @@ function Install-Game {
     $sc2000x = Join-Path $temp 'SC2000X.exe'
     Save-File $Sc2000xUrl $sc2000x -Sha256 $Sc2000xSha256
 
-    # SC2000X asks for these when it registers the game
+    # SC2000X asks for these when it registers the game. The defaults are the
+    # original installer's.
     Write-Host ''
-    $mayor = Read-NonEmpty 'Mayor name'
-    $company = Read-NonEmpty 'Company name'
+    $mayor = Read-WithDefault 'Mayor name' 'Mayor McSim'
+    $company = Read-WithDefault 'Company name' 'Maxis, Inc.'
 
     # SC2000X reads its answers from stdin, in this order: the game's path,
     # install, mayor, company, patch. Its closing "press any key" reads the
