@@ -98,6 +98,8 @@ function Get-Paths {
         UninstShortcut  = Join-Path $startMenuDir "Uninstall $UninstallDisplayName.lnk"
         UninstIcon      = Join-Path $installDir 'Uninstall.ico'
         DesktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'SimCity 2000.lnk'
+        # Where saved cities are zipped before a reinstall or uninstall
+        BackupDir       = [Environment]::GetFolderPath('MyDocuments')
         UninstallKey    = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$UninstallKeyName"
         CompatKey       = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers'
         GameSettingsKey = 'HKCU:\Software\Maxis\SimCity 2000'
@@ -233,14 +235,21 @@ function Start-Elevated {
     try {
         [void][Diagnostics.Process]::Start($info)
     } catch {
-        $e = $_.Exception
-        while ($e -and $e -isnot [ComponentModel.Win32Exception]) { $e = $e.InnerException }
-        # ERROR_CANCELLED: the UAC prompt was declined
-        if ($e -and $e.NativeErrorCode -eq 1223) {
+        if (Test-ElevationDeclined $_.Exception) {
             throw 'Administrator rights were not granted.'
         }
         throw
     }
+}
+
+# True if $Exception, or one it wraps, says the UAC prompt was declined
+function Test-ElevationDeclined {
+    param([Exception]$Exception)
+
+    $e = $Exception
+    while ($e -and $e -isnot [ComponentModel.Win32Exception]) { $e = $e.InnerException }
+    # ERROR_CANCELLED
+    [bool]($e -and $e.NativeErrorCode -eq 1223)
 }
 
 # An install is detected by the Installed apps entry, which is written as the
@@ -364,7 +373,7 @@ function Get-UserCity {
     }
 }
 
-# Zips the user's saved cities into Documents, after asking. Returns $false if
+# Zips the user's saved cities into the backup folder, after asking. Returns $false if
 # the user chose to stop.
 function Backup-UserCity {
     param($Paths)
@@ -373,8 +382,7 @@ function Backup-UserCity {
     $saves = @(Get-UserCity -Root $Paths.InstallDir -Manifest $Paths.CityManifest)
     if ($saves.Count -eq 0) { return $true }
 
-    $documents = [Environment]::GetFolderPath('MyDocuments')
-    $zipPath = Join-Path $documents ('SimCity2000_Saves_Backup_{0:yyyyMMdd_HHmmss}.zip' -f (Get-Date))
+    $zipPath = Join-Path $Paths.BackupDir ('SimCity2000_Saves_Backup_{0:yyyyMMdd_HHmmss}.zip' -f (Get-Date))
 
     Write-Host "Found $($saves.Count) saved city file(s) in the install folder."
     $answer = Read-Choice -Prompt "Back them up to $zipPath ? [Y/n]" -Choices 'Y', 'N' -Default 'Y'
@@ -658,6 +666,65 @@ function Install-DataLink {
     $true
 }
 
+# Extracts the game's folders and the uninstaller's icon from the ISO into
+# $TempDir. Returns their paths by name.
+function Expand-GameFile {
+    param([string]$IsoPath, [string]$TempDir, [string]$GitHubToken)
+
+
+    # 7-Zip extracts the ISO. Its standalone 7zr.exe can't read ISOs, so 7z.exe
+    # is pulled out of the 7-Zip MSI with lessmsi.
+    Write-Step 'Downloading lessmsi...'
+    $lessmsiZip = Join-Path $TempDir 'lessmsi.zip'
+    Save-File (Get-LatestAssetUrl -Repo 'activescott/lessmsi' -Pattern 'lessmsi-v*.zip' -Token $GitHubToken) $lessmsiZip
+    # Not Expand-Archive: as a module function it ignores $ProgressPreference
+    # set here and draws a progress bar.
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $lessmsiDir = Join-Path $TempDir 'lessmsi'
+    [IO.Compression.ZipFile]::ExtractToDirectory($lessmsiZip, $lessmsiDir)
+
+    Write-Step 'Downloading 7-Zip...'
+    Save-File (Get-LatestAssetUrl -Repo 'ip7z/7zip' -Pattern '*x64.msi' -Token $GitHubToken) (Join-Path $TempDir '7zip.msi')
+    # lessmsi needs the output folder to end in a backslash, and rejects '.\'.
+    # A relative path avoids quoting a trailing backslash on the command line.
+    Push-Location $TempDir
+    try {
+        $output = & (Join-Path $lessmsiDir 'lessmsi.exe') xfo '7zip.msi' '7zip\' '7z.exe' '7z.dll'
+    } finally {
+        Pop-Location
+    }
+    $sevenZip = Join-Path $TempDir '7zip\7z.exe'
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $sevenZip)) {
+        $output | Out-Host
+        throw 'Failed to extract 7z.exe from the 7-Zip MSI.'
+    }
+
+    Write-Step 'Extracting game files from the ISO...'
+    $isoOut = Join-Path $TempDir 'iso'
+    & $sevenZip x $IsoPath "-o$isoOut" -y 'WIN95\SC2K' 'WIN95\GOODIES' 'DATA' 'WIN95\UNINST.EXE' | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "7-Zip failed to extract the ISO (exit code $LASTEXITCODE)."
+    }
+    $extracted = @{
+        'SC2K'    = 'WIN95\SC2K'
+        'GOODIES' = 'WIN95\GOODIES'
+        'DATA'    = 'DATA'
+    }
+    foreach ($name in @($extracted.Keys)) {
+        $dir = Join-Path $isoOut $extracted[$name]
+        if (-not (Test-Path -LiteralPath $dir)) {
+            throw "The ISO doesn't look like $AppName (no $($extracted[$name]) folder)."
+        }
+        $extracted[$name] = $dir
+    }
+    # The Start Menu uninstall shortcut gets the icon of the original
+    # installer's uninstaller. Only the icon is kept, not the uninstaller.
+    & $sevenZip e (Join-Path $isoOut 'WIN95\UNINST.EXE') "-o$isoOut" -y '.rsrc\ICON\1.ico' | Out-Null
+    $extracted['UninstIcon'] = Join-Path $isoOut '1.ico'
+
+    $extracted
+}
+
 function Invoke-Install {
     param($Paths, [string]$Iso, [bool]$IsReinstall, [string]$GitHubToken)
 
@@ -682,55 +749,7 @@ function Invoke-Install {
         Copy-Item -LiteralPath $PSCommandPath -Destination $scriptCopy
     }
 
-    # 7-Zip extracts the ISO. Its standalone 7zr.exe can't read ISOs, so 7z.exe
-    # is pulled out of the 7-Zip MSI with lessmsi.
-    Write-Step 'Downloading lessmsi...'
-    $lessmsiZip = Join-Path $temp 'lessmsi.zip'
-    Save-File (Get-LatestAssetUrl -Repo 'activescott/lessmsi' -Pattern 'lessmsi-v*.zip' -Token $GitHubToken) $lessmsiZip
-    # Not Expand-Archive: as a module function it ignores $ProgressPreference
-    # set here and draws a progress bar.
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $lessmsiDir = Join-Path $temp 'lessmsi'
-    [IO.Compression.ZipFile]::ExtractToDirectory($lessmsiZip, $lessmsiDir)
-
-    Write-Step 'Downloading 7-Zip...'
-    Save-File (Get-LatestAssetUrl -Repo 'ip7z/7zip' -Pattern '*x64.msi' -Token $GitHubToken) (Join-Path $temp '7zip.msi')
-    # lessmsi needs the output folder to end in a backslash, and rejects '.\'.
-    # A relative path avoids quoting a trailing backslash on the command line.
-    Push-Location $temp
-    try {
-        $output = & (Join-Path $lessmsiDir 'lessmsi.exe') xfo '7zip.msi' '7zip\' '7z.exe' '7z.dll'
-    } finally {
-        Pop-Location
-    }
-    $sevenZip = Join-Path $temp '7zip\7z.exe'
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $sevenZip)) {
-        $output | Out-Host
-        throw 'Failed to extract 7z.exe from the 7-Zip MSI.'
-    }
-
-    Write-Step 'Extracting game files from the ISO...'
-    $isoOut = Join-Path $temp 'iso'
-    & $sevenZip x $isoPath "-o$isoOut" -y 'WIN95\SC2K' 'WIN95\GOODIES' 'DATA' 'WIN95\UNINST.EXE' | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "7-Zip failed to extract the ISO (exit code $LASTEXITCODE)."
-    }
-    $extracted = @{
-        'SC2K'    = 'WIN95\SC2K'
-        'GOODIES' = 'WIN95\GOODIES'
-        'DATA'    = 'DATA'
-    }
-    foreach ($name in @($extracted.Keys)) {
-        $dir = Join-Path $isoOut $extracted[$name]
-        if (-not (Test-Path -LiteralPath $dir)) {
-            throw "The ISO doesn't look like $AppName (no $($extracted[$name]) folder)."
-        }
-        $extracted[$name] = $dir
-    }
-    # The Start Menu uninstall shortcut gets the icon of the original
-    # installer's uninstaller. Only the icon is kept, not the uninstaller.
-    & $sevenZip e (Join-Path $isoOut 'WIN95\UNINST.EXE') "-o$isoOut" -y '.rsrc\ICON\1.ico' | Out-Null
-    $extracted['UninstIcon'] = Join-Path $isoOut '1.ico'
+    $extracted = Expand-GameFile -IsoPath $isoPath -TempDir $temp -GitHubToken $GitHubToken
 
     if ($IsReinstall) {
         if (-not (Backup-UserCity $Paths)) {
