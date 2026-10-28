@@ -7,10 +7,12 @@ and 11 from an ISO of the original CD.
 
 1. Download [sc2k_install.zip](https://github.com/Mahir007/sc2k_win95-installer/releases/latest/download/sc2k_install.zip)
    from the latest release and extract `sc2k_install.ps1` from it.
-2. Right-click it and choose Run with PowerShell. Accept the administrator
+2. Right-click it, choose Properties, check Unblock in the Security section and
+   click OK.
+3. Right-click it again and choose Run with PowerShell. Accept the administrator
    prompt.
-3. Select your SimCity 2000 Special Edition ISO.
-4. Type a mayor and company name, or press Enter to keep the defaults. Press
+4. Select your SimCity 2000 Special Edition ISO.
+5. Type a mayor and company name, or press Enter to keep the defaults. Press
    any key once SC2000X says it has finished.
 
 Launch the game from Start Menu > Maxis > SimCity 2000, or from the desktop
