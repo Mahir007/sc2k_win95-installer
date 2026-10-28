@@ -179,6 +179,9 @@ function Format-ReleaseNotes {
 # The tag this release is compared with, or nothing for the first release
 function Get-PreviousTag {
     param([string]$Tag)
+    # git fails when there is no earlier tag. Under Stop, Windows PowerShell 5.1
+    # throws on its stderr even when it is redirected.
+    $ErrorActionPreference = 'Continue'
     # The patterns are literal arguments: on Linux and macOS, PowerShell expands
     # wildcards in splatted ones, so v* would become the vendor folder
     $previous = if ($Tag -like '*-*') {
