@@ -88,6 +88,7 @@ function Get-Paths {
         GameShortcut    = Join-Path $startMenuDir 'SimCity 2000.lnk'
         UrkShortcut     = Join-Path $startMenuDir 'SimCity Urban Renewal Kit.lnk'
         UninstShortcut  = Join-Path $startMenuDir "Uninstall $UninstallDisplayName.lnk"
+        UninstIcon      = Join-Path $installDir 'Uninstall.ico'
         DesktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'SimCity 2000.lnk'
         UninstallKey    = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$UninstallKeyName"
         CompatKey       = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers'
@@ -646,7 +647,7 @@ function Invoke-Install {
 
     Write-Step 'Extracting game files from the ISO...'
     $isoOut = Join-Path $temp 'iso'
-    & $sevenZip x $isoPath "-o$isoOut" -y 'WIN95\SC2K' 'WIN95\GOODIES' 'DATA' | Out-Null
+    & $sevenZip x $isoPath "-o$isoOut" -y 'WIN95\SC2K' 'WIN95\GOODIES' 'DATA' 'WIN95\UNINST.EXE' | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "7-Zip failed to extract the ISO (exit code $LASTEXITCODE)."
     }
@@ -662,6 +663,10 @@ function Invoke-Install {
         }
         $extracted[$name] = $dir
     }
+    # The Start Menu uninstall shortcut gets the icon of the original
+    # installer's uninstaller. Only the icon is kept, not the uninstaller.
+    & $sevenZip e (Join-Path $isoOut 'WIN95\UNINST.EXE') "-o$isoOut" -y '.rsrc\ICON\1.ico' | Out-Null
+    $extracted['UninstIcon'] = Join-Path $isoOut '1.ico'
 
     if ($IsReinstall) {
         if (-not (Backup-UserCity $Paths)) {
@@ -801,7 +806,12 @@ function Install-Game {
     New-Item -ItemType Directory -Path $Paths.StartMenuDir -Force | Out-Null
     New-Shortcut -Path $Paths.GameShortcut @gameShortcut
     New-Shortcut -Path $Paths.UrkShortcut -Target $Paths.UrkExe -Icon $Paths.UrkExe
-    New-Shortcut -Path $Paths.UninstShortcut -Target $powershellExe -Arguments $uninstallArgs
+    $uninstShortcut = @{ Target = $powershellExe; Arguments = $uninstallArgs }
+    if (Test-Path -LiteralPath $Extracted['UninstIcon']) {
+        Copy-Item -LiteralPath $Extracted['UninstIcon'] -Destination $Paths.UninstIcon
+        $uninstShortcut['Icon'] = $Paths.UninstIcon
+    }
+    New-Shortcut -Path $Paths.UninstShortcut @uninstShortcut
 
     # Registers the install in Installed apps. This is what a re-run detects,
     # so it has to be the last step.
