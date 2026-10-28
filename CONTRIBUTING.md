@@ -3,7 +3,8 @@
 ## Layout
 
 - `src/sc2k_install.ps1`: the installer. It is the only file users download.
-- `tests/`: Pester tests.
+- `tests/`: Pester tests, and `manual-results.md`, the checks done by hand on
+  Windows and the result of the last run.
 - `vendor/`: the last releases of SC2000X and SC2KRepainter. The script
   downloads them from `main` and checks their SHA-256, so replacing one
   means updating its hash in the script.
