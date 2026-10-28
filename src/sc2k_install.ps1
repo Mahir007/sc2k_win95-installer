@@ -613,7 +613,11 @@ function Invoke-Install {
     Write-Step 'Downloading lessmsi...'
     $lessmsiZip = Join-Path $temp 'lessmsi.zip'
     Save-File (Get-LatestAssetUrl 'activescott/lessmsi' 'lessmsi-v*.zip') $lessmsiZip
-    Expand-Archive -LiteralPath $lessmsiZip -DestinationPath $temp -Force
+    # Not Expand-Archive: as a module function it ignores $ProgressPreference
+    # set here and draws a progress bar.
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $lessmsiDir = Join-Path $temp 'lessmsi'
+    [IO.Compression.ZipFile]::ExtractToDirectory($lessmsiZip, $lessmsiDir)
 
     Write-Step 'Downloading 7-Zip...'
     Save-File (Get-LatestAssetUrl 'ip7z/7zip' '*x64.msi') (Join-Path $temp '7zip.msi')
@@ -621,7 +625,7 @@ function Invoke-Install {
     # avoids quoting a trailing backslash on the command line.
     Push-Location $temp
     try {
-        & (Join-Path $temp 'lessmsi.exe') xfo '7zip.msi' '.\' '7z.exe' '7z.dll' | Out-Null
+        & (Join-Path $lessmsiDir 'lessmsi.exe') xfo '7zip.msi' '.\' '7z.exe' '7z.dll' | Out-Null
     } finally {
         Pop-Location
     }
