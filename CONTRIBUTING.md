@@ -16,7 +16,8 @@ version ships with. Don't use PowerShell 7-only syntax (`??`, `?:`, `&&`,
 
 ## Lint and test
 
-With PowerShell 7 and the PSScriptAnalyzer and Pester 5 modules installed:
+With PowerShell 7 and the PSScriptAnalyzer and Pester 5 or later modules
+installed:
 
 ```
 Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
@@ -28,7 +29,9 @@ Windows they also install, reinstall and uninstall the game, with every
 folder and registry key moved into Pester's temporary ones, and with the
 downloads, the ISO, SC2000X and the prompts replaced. Like the install, they
 create a symbolic link, so they need an administrator window or Developer
-Mode. CI runs everything on Windows under both 5.1 and 7, as administrator.
+Mode. CI runs everything on Windows under both 5.1 and 7, as administrator,
+and the release notes tests under PowerShell 7 on Linux, where the release
+workflow runs that script.
 
 What the tests replace is checked by hand, in `tests/manual-results.md`.
 
@@ -75,11 +78,16 @@ git tag -a v1.0.0 -m "1.0.0"
 git push origin v1.0.0
 ```
 
-The script in the repository says its version is `0.0.0-dev`. The release
-workflow puts the tag's version in a copy of it, packs that copy and `LICENSE`
-into `sc2k_install.zip`, and creates a GitHub release with the archive and its
-SHA-256 in `sc2k_install.zip.sha256`. A tag such as `v1.0.0-preview.1` becomes a
-pre-release.
+The script in the repository says its version is `0.0.0-dev`. CI puts a
+version in a copy of it, packs that copy and `LICENSE` into `sc2k_install.zip`
+with its SHA-256 in `sc2k_install.zip.sha256`, and checks that the copy in the
+archive starts under both PowerShells on Windows. On a branch the version is
+`0.0.0-dev+<commit>`, and the archive is kept for a day as the run's `release`
+artifact.
+
+The release workflow runs CI with the tag's version, then creates a GitHub
+release with CI's archive, its SHA-256 and an attestation of where it was built.
+A tag with a hyphen, such as `v1.0.0-preview.1`, becomes a pre-release.
 
 `.github/scripts/New-ReleaseNotes.ps1` writes the release notes from the commit
 subjects since the previous tag, so write them for users. A release is compared
