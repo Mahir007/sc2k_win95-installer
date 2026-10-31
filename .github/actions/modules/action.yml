@@ -1,0 +1,39 @@
+name: PowerShell modules
+description: >-
+  Restores Pester and PSScriptAnalyzer from the cache, or downloads them, and
+  sets PS_MODULES to their folder. Steps that use them put PS_MODULES at the
+  front of PSModulePath themselves: Windows PowerShell 5.1 and PowerShell 7
+  each build their own PSModulePath, so it can't be set once for both.
+
+inputs:
+  pester:
+    description: Pester version
+    default: 6.2.0
+  psscriptanalyzer:
+    description: PSScriptAnalyzer version
+    default: 1.25.0
+
+runs:
+  using: composite
+  steps:
+    - id: cache
+      uses: actions/cache@v6
+      with:
+        path: ~/psmodules
+        key: psmodules-${{ runner.os }}-pester-${{ inputs.pester }}-pssa-${{ inputs.psscriptanalyzer }}
+
+    # Saved with PowerShell 7 even for 5.1: Install-Module under 5.1 takes
+    # nearly two minutes to set itself up.
+    - name: Download the modules
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: pwsh
+      env:
+        PESTER: ${{ inputs.pester }}
+        PSSA: ${{ inputs.psscriptanalyzer }}
+      run: |
+        $dir = New-Item -ItemType Directory -Force (Join-Path $HOME psmodules)
+        Save-PSResource -Name Pester -Version $env:PESTER -Path $dir -Repository PSGallery -TrustRepository
+        Save-PSResource -Name PSScriptAnalyzer -Version $env:PSSA -Path $dir -Repository PSGallery -TrustRepository
+
+    - shell: pwsh
+      run: Add-Content $env:GITHUB_ENV "PS_MODULES=$(Join-Path $HOME psmodules)"
