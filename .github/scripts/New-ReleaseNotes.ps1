@@ -2,8 +2,9 @@
 .SYNOPSIS
     Writes the notes for a GitHub release from the commits since the last tag.
 .DESCRIPTION
-    Commits follow Conventional Commits. Breaking changes, features and fixes
-    get a section each; every other commit goes in a collapsed list. A
+    Commits follow Conventional Commits. Breaking changes, features, fixes,
+    performance and documentation get a section each; every other commit goes
+    in a collapsed list. A commit and its revert are both left out. A
     pre-release is compared with the previous tag, a release with the previous
     release, so its notes cover its pre-releases too.
 .EXAMPLE
@@ -22,13 +23,15 @@ $ErrorActionPreference = 'Stop'
 
 # The file stays ASCII, like the installer, so the emoji are built from code points
 $Emoji = @{
-    Warning  = [char]::ConvertFromUtf32(0x26A0) + [char]::ConvertFromUtf32(0xFE0F)
-    Feature  = [char]::ConvertFromUtf32(0x2728)
-    Fix      = [char]::ConvertFromUtf32(0x1F41B)
-    Other    = [char]::ConvertFromUtf32(0x1F9F0)
-    Download = [char]::ConvertFromUtf32(0x1F4E6)
-    Verify   = [char]::ConvertFromUtf32(0x1F512)
-    Changes  = [char]::ConvertFromUtf32(0x1F4DD)
+    Warning     = [char]::ConvertFromUtf32(0x26A0) + [char]::ConvertFromUtf32(0xFE0F)
+    Feature     = [char]::ConvertFromUtf32(0x2728)
+    Fix         = [char]::ConvertFromUtf32(0x1F41B)
+    Performance = [char]::ConvertFromUtf32(0x26A1)
+    Docs        = [char]::ConvertFromUtf32(0x1F4D6)
+    Other       = [char]::ConvertFromUtf32(0x1F9F0)
+    Download    = [char]::ConvertFromUtf32(0x1F4E6)
+    Verify      = [char]::ConvertFromUtf32(0x1F512)
+    Changes     = [char]::ConvertFromUtf32(0x1F4DD)
 }
 
 # Capitalizes the first word if it is a plain word, which a file name such as
@@ -50,12 +53,14 @@ function ConvertFrom-CommitMessage {
         [string]$Body
     )
     $commit = [pscustomobject]@{
-        Hash        = $Hash
-        Subject     = $Subject
-        Type        = $null
-        Scope       = $null
-        Description = $Subject
-        Breaking    = $null
+        Hash           = $Hash
+        Subject        = $Subject
+        Type           = $null
+        Scope          = $null
+        Description    = $Subject
+        Breaking       = $null
+        RevertsHash    = $null
+        RevertsSubject = $null
     }
     if ($Subject -match '^(?<type>[a-zA-Z]+)(?:\((?<scope>[^)]+)\))?(?<bang>!)?: (?<desc>.+)$') {
         $commit.Type = $Matches.type.ToLowerInvariant()
@@ -71,7 +76,45 @@ function ConvertFrom-CommitMessage {
             $commit.Breaking = $commit.Description
         }
     }
+    # git revert names the reverted commit in the body and quotes its subject
+    # in the revert's subject, which may be reworded to revert: <subject>
+    if ($Body -match 'This reverts commit (?<hash>[0-9a-f]{7,40})') {
+        $commit.RevertsHash = $Matches.hash
+    }
+    if ($Subject -cmatch '^Revert "(?<subject>.+)"$') {
+        $commit.RevertsSubject = $Matches.subject
+    }
+    elseif ($commit.Type -eq 'revert') {
+        $commit.RevertsSubject = $commit.Description
+    }
     $commit
+}
+
+# Leaves out each commit that a later one in the list reverts, and the revert.
+# A revert of a commit from an earlier release stays.
+function Skip-RevertedCommit {
+    param([object[]]$Commits)
+    $skip = New-Object 'System.Collections.Generic.HashSet[string]'
+    for ($i = 0; $i -lt $Commits.Count; $i++) {
+        $revert = $Commits[$i]
+        if (-not $revert.RevertsHash -and -not $revert.RevertsSubject) { continue }
+        for ($j = 0; $j -lt $i; $j++) {
+            $c = $Commits[$j]
+            if ($skip.Contains($c.Hash)) { continue }
+            $match = if ($revert.RevertsHash) {
+                $c.Hash.StartsWith($revert.RevertsHash)
+            }
+            else {
+                $c.Subject -ceq $revert.RevertsSubject
+            }
+            if ($match) {
+                [void]$skip.Add($c.Hash)
+                [void]$skip.Add($revert.Hash)
+                break
+            }
+        }
+    }
+    @($Commits | Where-Object { -not $skip.Contains($_.Hash) })
 }
 
 # A list item with a link to the commit. Without -Text, it is the subject.
@@ -130,22 +173,21 @@ function Format-ReleaseNotes {
     $lines.Add('```')
     $lines.Add('')
 
-    # A feature or fix scoped to the tooling, such as fix(ci), doesn't change
-    # the installer, so it goes with the other changes
-    $toolingScopes = 'ci', 'build', 'docs', 'test'
-    $breaking = @($Commits | Where-Object { $_.Breaking })
-    $userFacing = @($Commits | Where-Object { -not $_.Breaking -and $_.Type -in 'feat', 'fix' -and $_.Scope -notin $toolingScopes })
-    $features = @($userFacing | Where-Object { $_.Type -eq 'feat' })
-    $fixes = @($userFacing | Where-Object { $_.Type -eq 'fix' })
-    $others = @($Commits | Where-Object { -not $_.Breaking -and $_ -notin $userFacing })
+    $Commits = @(Skip-RevertedCommit -Commits $Commits)
+    $rest = @($Commits | Where-Object { -not $_.Breaking })
+    $sections = @(
+        @{ Title = "$($Emoji.Warning) Breaking changes"; Breaking = $true; Commits = @($Commits | Where-Object { $_.Breaking }) }
+        @{ Title = "$($Emoji.Feature) Features"; Breaking = $false; Commits = @($rest | Where-Object { $_.Type -eq 'feat' }) }
+        @{ Title = "$($Emoji.Fix) Fixes"; Breaking = $false; Commits = @($rest | Where-Object { $_.Type -eq 'fix' }) }
+        @{ Title = "$($Emoji.Performance) Performance"; Breaking = $false; Commits = @($rest | Where-Object { $_.Type -eq 'perf' }) }
+        # Contributor docs are for people working on the installer, not using it
+        @{ Title = "$($Emoji.Docs) Documentation"; Breaking = $false; Commits = @($rest | Where-Object { $_.Type -eq 'docs' -and $_.Scope -ne 'contributing' }) }
+    )
+    $listed = @($sections | ForEach-Object { $_.Commits })
+    $others = @($rest | Where-Object { $_ -notin $listed })
 
     $lines.Add("## $($Emoji.Changes) What's changed")
     $lines.Add('')
-    $sections = @(
-        @{ Title = "$($Emoji.Warning) Breaking changes"; Commits = $breaking; Breaking = $true }
-        @{ Title = "$($Emoji.Feature) New features"; Commits = $features; Breaking = $false }
-        @{ Title = "$($Emoji.Fix) Bug fixes"; Commits = $fixes; Breaking = $false }
-    )
     foreach ($section in $sections) {
         if ($section.Commits.Count -eq 0) { continue }
         $lines.Add("### $($section.Title)")
@@ -156,8 +198,10 @@ function Format-ReleaseNotes {
         }
         $lines.Add('')
     }
-    if ($breaking.Count + $features.Count + $fixes.Count -eq 0) {
-        $lines.Add('No changes to the installer itself.')
+    # A commit that doesn't follow Conventional Commits may still change the installer
+    $untyped = @($others | Where-Object { -not $_.Type })
+    if ($listed.Count -eq 0 -and $untyped.Count -eq 0) {
+        $lines.Add('No user-facing changes.')
         $lines.Add('')
     }
     if ($others.Count -gt 0) {
@@ -197,11 +241,12 @@ function Get-PreviousTag {
     if ($LASTEXITCODE -eq 0) { $previous }
 }
 
+# The commits in the release, oldest first
 function Get-ReleaseCommit {
     param([string]$Tag, [string]$PreviousTag)
     $range = if ($PreviousTag) { "$PreviousTag..$Tag" } else { $Tag }
     # Fields end with US (0x1F) and commits with RS (0x1E)
-    $log = & git log --no-merges '--format=%H%x1f%s%x1f%b%x1e' $range
+    $log = & git log --no-merges --reverse '--format=%H%x1f%s%x1f%b%x1e' $range
     if ($LASTEXITCODE -ne 0) { throw "git log $range failed" }
     foreach ($record in (($log -join "`n") -split [char]0x1E)) {
         $fields = $record.TrimStart("`n") -split [char]0x1F

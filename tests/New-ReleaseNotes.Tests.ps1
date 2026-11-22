@@ -39,6 +39,14 @@ Describe 'ConvertFrom-CommitMessage' {
         $body = "Why.`n`nBREAKING CHANGE: the old`nscript is gone.`nCo-Authored-By: Someone <a@b.c>`n"
         (New-Commit 'feat!: rewrite it' $body).Breaking | Should -Be 'Rewrite it. the old script is gone.'
     }
+
+    It 'finds the commit that a revert reverts' {
+        $hash = '0123456789abcdef0123456789abcdef01234567'
+        $c = New-Commit 'Revert "feat: add a thing"' "This reverts commit $hash.`n"
+        $c.RevertsHash | Should -Be $hash
+        $c.RevertsSubject | Should -Be 'feat: add a thing'
+        (New-Commit 'revert: feat: add a thing').RevertsSubject | Should -Be 'feat: add a thing'
+    }
 }
 
 Describe 'Format-Sentence' {
@@ -48,6 +56,26 @@ Describe 'Format-Sentence' {
 
     It 'leaves a file name as it is' {
         Format-Sentence 'sc2k_install.bat is gone' | Should -Be 'sc2k_install.bat is gone'
+    }
+}
+
+Describe 'Skip-RevertedCommit' {
+    It 'leaves out a commit and its revert' {
+        $added = New-Commit 'feat: add a thing'
+        $revert = New-Commit 'revert: feat: add a thing' "This reverts commit $($added.Hash).`n"
+        $kept = @(Skip-RevertedCommit -Commits @($added, (New-Commit 'fix: mend a thing'), $revert))
+        $kept.Count | Should -Be 1
+        $kept[0].Subject | Should -Be 'fix: mend a thing'
+    }
+
+    It 'matches a revert without a hash by its subject' {
+        $kept = @(Skip-RevertedCommit -Commits @((New-Commit 'feat: add a thing'), (New-Commit 'Revert "feat: add a thing"')))
+        $kept.Count | Should -Be 0
+    }
+
+    It 'keeps a revert of a commit from an earlier release' {
+        $revert = New-Commit 'revert: feat: add a thing' "This reverts commit 0123456789abcdef0123456789abcdef01234567.`n"
+        @(Skip-RevertedCommit -Commits @($revert)).Count | Should -Be 1
     }
 }
 
@@ -75,28 +103,34 @@ Describe 'Format-ReleaseNotes' {
         Get-Notes | Should -Not -Match '\[!WARNING\]'
     }
 
-    It 'sorts commits into sections and lists a breaking change once' {
+    It 'sorts commits into sections by type and lists a breaking change once' {
         $notes = Get-Notes -Commits @(
             New-Commit 'feat!: rewrite it'
             New-Commit 'feat: add a thing'
             New-Commit 'fix(ui): mend a thing'
+            New-Commit 'perf: start faster'
             New-Commit 'docs: explain a thing'
+            New-Commit 'docs(contributing): explain the tests'
+            New-Commit 'ci: run the tests'
         )
         $notes | Should -Match '### \S+ Breaking changes\n\n- Rewrite it \('
-        $notes | Should -Match '### \S+ New features\n\n- Add a thing \('
-        $notes | Should -Match '### \S+ Bug fixes\n\n- \*\*ui:\*\* Mend a thing \('
-        $notes | Should -Match 'Other changes \(1\)</summary>\n\n- docs: explain a thing \('
+        $notes | Should -Match '### \S+ Features\n\n- Add a thing \('
+        $notes | Should -Match '### \S+ Fixes\n\n- \*\*ui:\*\* Mend a thing \('
+        $notes | Should -Match '### \S+ Performance\n\n- Start faster \('
+        $notes | Should -Match '### \S+ Documentation\n\n- Explain a thing \('
+        $notes | Should -Match 'Other changes \(2\)</summary>\n\n- docs\(contributing\): explain the tests \(.+\n- ci: run the tests \('
         ([regex]::Matches($notes, 'Rewrite it')).Count | Should -Be 1
     }
 
-    It 'puts a fix scoped to the tooling with the other changes' {
-        $notes = Get-Notes -Commits @(New-Commit 'fix(ci): mend the workflow')
-        $notes | Should -Not -Match 'Bug fixes'
-        $notes | Should -Match 'Other changes \(1\)</summary>\n\n- fix\(ci\): mend the workflow \('
+    It 'leaves out a reverted commit and its revert' {
+        $added = New-Commit 'feat: add a thing'
+        $revert = New-Commit 'revert: feat: add a thing' "This reverts commit $($added.Hash).`n"
+        Get-Notes -Commits @($added, $revert) | Should -Not -Match 'add a thing'
     }
 
-    It 'says so when no commit changes the installer' {
-        Get-Notes -Commits @(New-Commit 'ci: tweak') | Should -Match 'No changes to the installer itself'
+    It 'says so when no commit changes what users see' {
+        Get-Notes -Commits @(New-Commit 'ci: tweak') | Should -Match 'No user-facing changes'
+        Get-Notes -Commits @(New-Commit 'Tidy up') | Should -Not -Match 'No user-facing changes'
     }
 
     It 'links the comparison with the previous tag' {
@@ -104,7 +138,7 @@ Describe 'Format-ReleaseNotes' {
     }
 }
 
-Describe 'Get-PreviousTag' {
+Describe 'Get-PreviousTag and Get-ReleaseCommit' {
     BeforeAll {
         $script:Git = Join-Path $TestDrive 'repo'
         New-Item -ItemType Directory $Git | Out-Null
@@ -138,5 +172,10 @@ Describe 'Get-PreviousTag' {
 
     It 'has nothing for the first release' {
         Get-PreviousTag -Tag 'v1.0.0' | Should -BeNullOrEmpty
+    }
+
+    It 'lists the commits oldest first' {
+        (@(Get-ReleaseCommit -Tag 'v1.1.0' -PreviousTag 'v1.0.0').Subject -join ', ') |
+            Should -Be 'v1.1.0-preview.1, v1.1.0'
     }
 }
