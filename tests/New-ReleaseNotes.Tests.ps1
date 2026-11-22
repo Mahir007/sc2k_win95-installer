@@ -97,8 +97,20 @@ Describe 'Get-Download' {
         $download = @(Get-Download -Lines @('abc123 *sc2k_install.zip'))
         $download.Count | Should -Be 1
         $download[0].Name | Should -Be 'sc2k_install.zip'
-        $download[0].Label | Should -Be 'Windows'
-        $download[0].Checksum | Should -Be 'abc123 *sc2k_install.zip'
+        $download[0].System | Should -Be 'Windows'
+        $download[0].Link | Should -BeNullOrEmpty
+    }
+
+    It 'puts all of a system''s files in its row' {
+        $notes = Get-Notes -Download @(Get-Download -Lines @('abc123  sc2k_install.zip', 'def456  sc2k_install.zip'))
+        $link = "[sc2k_install.zip]($Base/releases/download/v1.0.0/sc2k_install.zip)"
+        $notes | Should -Match ([regex]::Escape("| Windows | $link $($Emoji.Dot) $link |"))
+    }
+
+    It 'shows a link text in place of the name' {
+        $kinds = @(@{ Glob = '*.zip'; System = 'Windows'; Link = 'installer' })
+        $notes = Get-Notes -Download @(Get-Download -Lines @('abc123  sc2k_install.zip') -Kinds $kinds)
+        $notes | Should -Match ([regex]::Escape("| Windows | [installer]($Base/releases/download/v1.0.0/sc2k_install.zip) |"))
     }
 
     It 'refuses a file it does not know' {
@@ -138,9 +150,9 @@ Describe 'Format-ReleaseNotes' {
             ''
             '## Download'
             ''
-            '| File | For |'
+            '| System | Download |'
             '| --- | --- |'
-            "| [sc2k_install.zip]($Base/releases/download/v1.1.0-beta.1/sc2k_install.zip) | Windows |"
+            "| Windows | [sc2k_install.zip]($Base/releases/download/v1.1.0-beta.1/sc2k_install.zip) |"
             ''
             "For how to install it, see [Quick start]($Base/blob/v1.1.0-beta.1/README.md#quick-start) in the README."
             ''
@@ -170,13 +182,13 @@ Describe 'Format-ReleaseNotes' {
             '<details>'
             "<summary>$($Emoji.Verify) SHA-256</summary>"
             ''
-            '```'
-            'abc123  sc2k_install.zip'
-            '```'
+            "Download the file's ``.sha256`` too, and run its line in the folder with both. It prints ``OK`` or ``True`` if the file is intact."
             ''
-            "To check your downloads, put them and their ``.sha256`` files in a folder of their own, and run the command for your system there. Delete older copies first, so your browser doesn't rename the new ones."
+            'Windows, in PowerShell:'
             ''
-            "- $($Checks.Windows)"
+            '```powershell'
+            '$hash, $file = (Get-Content ''sc2k_install.zip.sha256'') -split ''\s+''; (Get-FileHash $file).Hash -eq $hash'
+            '```'
             ''
             '</details>'
             ''
@@ -186,16 +198,16 @@ Describe 'Format-ReleaseNotes' {
 
     It 'has a check command that tells an intact download from a damaged one' {
         $notes = Get-Notes -Download @(Get-Download -Lines @('abc123  sc2k_install.zip'))
-        $command = [scriptblock]::Create([regex]::Match($notes, '- Windows, in PowerShell: `(.+)`').Groups[1].Value)
+        $command = [scriptblock]::Create([regex]::Match($notes, '```powershell\n(.+)\n```').Groups[1].Value)
         Push-Location $TestDrive
         try {
             Set-Content sc2k_install.zip 'archive' -NoNewline
             $hash = (Get-FileHash sc2k_install.zip).Hash.ToLowerInvariant()
             # The format sha256sum writes in the release workflow
             Set-Content sc2k_install.zip.sha256 "$hash  sc2k_install.zip"
-            & $command | Should -Be 'sc2k_install.zip: True'
+            & $command | Should -BeTrue
             Set-Content sc2k_install.zip 'damaged' -NoNewline
-            & $command | Should -Be 'sc2k_install.zip: False'
+            & $command | Should -BeFalse
         }
         finally {
             Pop-Location

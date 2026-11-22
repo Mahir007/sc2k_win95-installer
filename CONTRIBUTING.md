@@ -107,9 +107,10 @@ get their own sections, with the text of a `BREAKING CHANGE:` footer. Other
 commits go under a collapsed list, and a reverted commit is left out with its
 revert.
 
-The download table lists the archives the release's `.sha256` files name,
-with the labels in `$Files` at the top of the script, and links the README's
-quick start at the tag. A new kind of archive needs a line in `$Files`. A
+The download table has a row for each system, with a link to each archive the
+release's `.sha256` files name. `$Files` at the top of the script gives each
+kind of archive its system and link text, so a new kind needs an entry there.
+The table is followed by a link to the README's quick start at the tag. A
 second `-m` on the tag adds a summary at the top of the notes:
 
 ```sh

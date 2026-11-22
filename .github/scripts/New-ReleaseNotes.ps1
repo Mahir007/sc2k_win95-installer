@@ -32,20 +32,25 @@ $Emoji = @{
     Docs        = [char]::ConvertFromUtf32(0x1F4D6)
     Other       = [char]::ConvertFromUtf32(0x1F9F0)
     Verify      = [char]::ConvertFromUtf32(0x1F512)
+    Dot         = [char]::ConvertFromUtf32(0x00B7)
 }
 
-# The files a release has: a glob for the name, what the file is for, and its
-# system, in the order of the download table
+# The files a release has, in the order of the download table: a glob for the
+# name, its system, and its link text, or '' for the file's name
 $Files = @(
-    @{ Glob = 'sc2k_install.zip'; Label = 'Windows'; System = 'Windows' }
+    @{ Glob = 'sc2k_install.zip'; System = 'Windows'; Link = '' }
 )
 
-# The command that checks the downloads on each system, in the order they're listed
-$Checks = [ordered]@{
-    macOS   = 'macOS: `shasum -a 256 -c *.sha256`'
-    Linux   = 'Linux: `sha256sum -c *.sha256`'
-    Android = 'Android: `sha256sum -c *.sha256`'
-    Windows = 'Windows, in PowerShell: `Get-ChildItem *.sha256 | ForEach-Object { $hash, $file = (Get-Content $_.FullName) -split ''\s+''; "${file}: $((Get-FileHash $file).Hash -eq $hash)" }`'
+# Longer names for systems' rows in the download table
+$RowNames = @{}
+
+# How to check a file on each system: the heading, the code block's language,
+# and the command, with {file} for the file's name
+$Checks = @{
+    Windows = @{ Heading = 'Windows, in PowerShell'; Lang = 'powershell'; Command = '$hash, $file = (Get-Content ''{file}.sha256'') -split ''\s+''; (Get-FileHash $file).Hash -eq $hash' }
+    macOS   = @{ Heading = 'macOS'; Lang = 'sh'; Command = 'shasum -a 256 -c ''{file}.sha256''' }
+    Linux   = @{ Heading = 'Linux'; Lang = 'sh'; Command = 'sha256sum -c ''{file}.sha256''' }
+    Android = @{ Heading = 'Android'; Lang = 'sh'; Command = 'sha256sum -c ''{file}.sha256''' }
 }
 
 # Capitalizes the first word if it is a plain word, which a file name such as
@@ -133,21 +138,20 @@ function Skip-RevertedCommit {
 
 # The archives that the .sha256 files' lines name, in the order of $Files
 function Get-Download {
-    param([string[]]$Lines)
+    param([string[]]$Lines, [object[]]$Kinds = $Files)
     $found = foreach ($line in $Lines) {
         if ($line -notmatch '^\S+\s+\*?(?<name>.+?)\s*$') { continue }
         $name = $Matches.name
         $order = -1
-        for ($i = 0; $i -lt $Files.Count; $i++) {
-            if ($name -like $Files[$i].Glob) { $order = $i; break }
+        for ($i = 0; $i -lt $Kinds.Count; $i++) {
+            if ($name -like $Kinds[$i].Glob) { $order = $i; break }
         }
         if ($order -lt 0) { throw "$name matches none of the files in `$Files" }
         [pscustomobject]@{
-            Name     = $name
-            Label    = $Files[$order].Label
-            System   = $Files[$order].System
-            Checksum = $line.TrimEnd()
-            Order    = $order
+            Name   = $name
+            System = $Kinds[$order].System
+            Link   = $Kinds[$order].Link
+            Order  = $order
         }
     }
     @($found | Sort-Object -Property Order, Name)
@@ -219,9 +223,15 @@ function Format-ReleaseNotes {
     $section = New-Object System.Collections.Generic.List[string]
     $section.Add('## Download')
     if ($Download.Count -gt 0) {
-        $rows = @('| File | For |', '| --- | --- |') + @($Download | ForEach-Object {
-                "| [$($_.Name)]($base/releases/download/$Tag/$($_.Name)) | $($_.Label) |"
-            })
+        $rows = @('| System | Download |', '| --- | --- |')
+        foreach ($system in @($Download | ForEach-Object { $_.System } | Select-Object -Unique)) {
+            $links = foreach ($f in @($Download | Where-Object { $_.System -ceq $system })) {
+                $text = if ($f.Link) { $f.Link } else { $f.Name }
+                "[$text]($base/releases/download/$Tag/$($f.Name))"
+            }
+            $name = if ($RowNames.ContainsKey($system)) { $RowNames[$system] } else { $system }
+            $rows += "| $name | $(@($links) -join " $($Emoji.Dot) ") |"
+        }
         $section.Add($rows -join "`n")
     }
     $link = "$base/blob/$Tag/README.md"
@@ -275,13 +285,16 @@ function Format-ReleaseNotes {
     $parts.Add($changes -join "`n`n")
 
     if ($Download.Count -gt 0) {
-        $systems = @($Download | ForEach-Object { $_.System })
-        $commands = @($Checks.Keys | Where-Object { $_ -in $systems } | ForEach-Object { "- $($Checks[$_])" })
-        $checksums = @($Download | ForEach-Object { $_.Checksum }) -join "`n"
         $fence = '```'
-        $parts.Add("<details>`n<summary>$($Emoji.Verify) SHA-256</summary>`n`n$fence`n$checksums`n$fence`n`n" +
-            "To check your downloads, put them and their ``.sha256`` files in a folder of their own, and run the command for your system there. Delete older copies first, so your browser doesn't rename the new ones.`n`n" +
-            ($commands -join "`n") + "`n`n</details>")
+        $blocks = @("Download the file's ``.sha256`` too, and run its line in the folder with both. It prints ``OK`` or ``True`` if the file is intact.")
+        foreach ($system in @($Download | ForEach-Object { $_.System } | Select-Object -Unique)) {
+            $check = $Checks[$system]
+            $lines = foreach ($f in @($Download | Where-Object { $_.System -ceq $system })) {
+                $check.Command.Replace('{file}', $f.Name)
+            }
+            $blocks += "$($check.Heading):`n`n$fence$($check.Lang)`n$(@($lines) -join "`n")`n$fence"
+        }
+        $parts.Add("<details>`n<summary>$($Emoji.Verify) SHA-256</summary>`n`n$($blocks -join "`n`n")`n`n</details>")
     }
     ($parts -join "`n`n") + "`n"
 }
