@@ -52,6 +52,7 @@ Describe 'ConvertFrom-CommitMessage' {
 Describe 'Format-Sentence' {
     It 'capitalizes a plain first word' {
         Format-Sentence 'add a thing' | Should -Be 'Add a thing'
+        Format-Sentence "don't ask" | Should -Be "Don't ask"
     }
 
     It 'leaves a file name as it is' {

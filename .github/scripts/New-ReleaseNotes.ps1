@@ -38,7 +38,7 @@ $Emoji = @{
 # sc2k_install.bat isn't
 function Format-Sentence {
     param([string]$Text)
-    if ($Text -cmatch '^[a-z]+(\s|$)') {
+    if ($Text -cmatch '^[a-z]+(''[a-z]+)?(\s|$)') {
         $Text = $Text.Substring(0, 1).ToUpperInvariant() + $Text.Substring(1)
     }
     $Text
