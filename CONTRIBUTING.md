@@ -95,6 +95,9 @@ artifact.
 The release workflow runs CI with the tag's version, then creates a GitHub
 release with CI's archive, its SHA-256 and an attestation of where it was built.
 A tag with a hyphen, such as `v1.0.0-beta.1`, becomes a pre-release.
+Pre-releases are `-alpha.N`, `-beta.N` or `-rc.N`, counting from 1, and the
+copy of the script in their archive has the commit too, such as
+`1.0.0-beta.1+1a2b3c4`.
 
 `.github/scripts/New-ReleaseNotes.ps1` writes the release notes from the commit
 subjects since the previous tag, so write them for users. A release is compared
