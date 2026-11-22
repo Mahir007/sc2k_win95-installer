@@ -44,6 +44,10 @@ jobs:
         with:
           # The notes list the commits since the previous release's tag.
           fetch-depth: 0
+      # actions/checkout replaces the pushed annotated tag with a lightweight
+      # one, which loses the summary in the tag's message.
+      - name: Fetch tags
+        run: git fetch --force --tags origin
       - uses: actions/download-artifact@v8
         with:
           name: release
@@ -52,7 +56,7 @@ jobs:
         shell: pwsh
         run: |
           ./.github/scripts/New-ReleaseNotes.ps1 -Tag $env:GITHUB_REF_NAME -Repository $env:GITHUB_REPOSITORY `
-            -ArchiveName sc2k_install.zip -OutFile $env:RUNNER_TEMP/notes.md
+            -Sha256File (Get-ChildItem dist/*.sha256).FullName -OutFile $env:RUNNER_TEMP/notes.md
           Get-Content $env:RUNNER_TEMP/notes.md | Add-Content $env:GITHUB_STEP_SUMMARY
       # Attestations need a public repository on GitHub's free plans.
       - name: Attest

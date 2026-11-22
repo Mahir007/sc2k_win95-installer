@@ -2,19 +2,21 @@
 .SYNOPSIS
     Writes the notes for a GitHub release from the commits since the last tag.
 .DESCRIPTION
-    Commits follow Conventional Commits. Breaking changes, features, fixes,
-    performance and documentation get a section each; every other commit goes
-    in a collapsed list. A commit and its revert are both left out. A
-    pre-release is compared with the previous tag, a release with the previous
-    release, so its notes cover its pre-releases too.
+    The notes have the tag's summary, a download table of the archives the
+    release's .sha256 files name, the commits by their Conventional Commits
+    type, and the checksums. Breaking changes, features, fixes, performance
+    and documentation get a section each; every other commit goes in a
+    collapsed list. A commit and its revert are both left out. A pre-release
+    is compared with the previous tag, a release with the previous release,
+    so its notes cover its pre-releases too.
 .EXAMPLE
-    ./New-ReleaseNotes.ps1 -Tag v1.0.0 -Repository Mahir007/sc2k_win95-installer -ArchiveName sc2k_install.zip -OutFile dist/notes.md
+    ./New-ReleaseNotes.ps1 -Tag v1.0.0 -Repository Mahir007/sc2k_win95-installer -Sha256File dist/sc2k_install.zip.sha256 -OutFile dist/notes.md
 #>
 [CmdletBinding()]
 param(
     [string]$Tag,
     [string]$Repository,
-    [string]$ArchiveName,
+    [string[]]$Sha256File = @(),
     [string]$OutFile
 )
 
@@ -29,9 +31,21 @@ $Emoji = @{
     Performance = [char]::ConvertFromUtf32(0x26A1)
     Docs        = [char]::ConvertFromUtf32(0x1F4D6)
     Other       = [char]::ConvertFromUtf32(0x1F9F0)
-    Download    = [char]::ConvertFromUtf32(0x1F4E6)
     Verify      = [char]::ConvertFromUtf32(0x1F512)
-    Changes     = [char]::ConvertFromUtf32(0x1F4DD)
+}
+
+# The files a release has: a glob for the name, what the file is for, and its
+# system, in the order of the download table
+$Files = @(
+    @{ Glob = 'sc2k_install.zip'; Label = 'Windows'; System = 'Windows' }
+)
+
+# The command that checks the downloads on each system, in the order they're listed
+$Checks = [ordered]@{
+    macOS   = 'macOS: `shasum -a 256 -c *.sha256`'
+    Linux   = 'Linux: `sha256sum -c *.sha256`'
+    Android = 'Android: `sha256sum -c *.sha256`'
+    Windows = 'Windows, in PowerShell: `Get-ChildItem *.sha256 | ForEach-Object { $hash, $file = (Get-Content $_.FullName) -split ''\s+''; "${file}: $((Get-FileHash $file).Hash -eq $hash)" }`'
 }
 
 # Capitalizes the first word if it is a plain word, which a file name such as
@@ -117,6 +131,50 @@ function Skip-RevertedCommit {
     @($Commits | Where-Object { -not $skip.Contains($_.Hash) })
 }
 
+# The archives that the .sha256 files' lines name, in the order of $Files
+function Get-Download {
+    param([string[]]$Lines)
+    $found = foreach ($line in $Lines) {
+        if ($line -notmatch '^\S+\s+\*?(?<name>.+?)\s*$') { continue }
+        $name = $Matches.name
+        $order = -1
+        for ($i = 0; $i -lt $Files.Count; $i++) {
+            if ($name -like $Files[$i].Glob) { $order = $i; break }
+        }
+        if ($order -lt 0) { throw "$name matches none of the files in `$Files" }
+        [pscustomobject]@{
+            Name     = $name
+            Label    = $Files[$order].Label
+            System   = $Files[$order].System
+            Checksum = $line.TrimEnd()
+            Order    = $order
+        }
+    }
+    @($found | Sort-Object -Property Order, Name)
+}
+
+# The README's first ## or ### heading about a quick start, installing or
+# downloading, or nothing
+function Get-InstallHeading {
+    param([string]$Readme)
+    $fenced = $false
+    foreach ($line in ($Readme -split '\r?\n')) {
+        if ($line.StartsWith('```')) {
+            $fenced = -not $fenced
+        }
+        elseif (-not $fenced -and $line -match '^#{2,3} +(?<text>.+?)[ #]*$') {
+            $text = $Matches.text
+            if ($text -match 'quick ?start|install|download') { return $text }
+        }
+    }
+}
+
+# The id GitHub gives a heading
+function ConvertTo-Anchor {
+    param([string]$Heading)
+    ($Heading.ToLowerInvariant() -replace '[^\w\- ]', '') -replace ' ', '-'
+}
+
 # A list item with a link to the commit. Without -Text, it is the subject.
 function Format-CommitLine {
     param(
@@ -142,36 +200,39 @@ function Format-ReleaseNotes {
         [string]$Tag,
         [string]$Repository,
         [string]$PreviousTag,
-        [object[]]$Commits,
-        [string]$ArchiveName
+        [object[]]$Commits = @(),
+        [object[]]$Download = @(),
+        [string]$Message,
+        [string]$Readme
     )
     $base = "https://github.com/$Repository"
-    $download = "$base/releases/download/$Tag"
-    $lines = New-Object System.Collections.Generic.List[string]
+    $parts = New-Object System.Collections.Generic.List[string]
 
     if ($Tag -like '*-*') {
-        $lines.Add('> [!WARNING]')
-        $lines.Add("> This is a pre-release. Please report problems in [Issues]($base/issues).")
-        $lines.Add('')
+        $version = $Tag.TrimStart('v').Split('-')[0]
+        $parts.Add("> [!WARNING]`n> This is a pre-release, for trying things out before $version is final. Please report problems in [Issues]($base/issues).")
+    }
+    if ($Message) {
+        $parts.Add($Message)
     }
 
-    $lines.Add("## $($Emoji.Download) Download")
-    $lines.Add('')
-    $lines.Add('| File | Contents |')
-    $lines.Add('| --- | --- |')
-    $lines.Add("| [$ArchiveName]($download/$ArchiveName) | The installer and its license |")
-    $lines.Add("| [$ArchiveName.sha256]($download/$ArchiveName.sha256) | The archive's SHA-256 |")
-    $lines.Add('')
-    $lines.Add("Extract ``sc2k_install.ps1`` from the archive and follow the [quick start]($base#quick-start).")
-    $lines.Add('')
-    $lines.Add("### $($Emoji.Verify) Verify the download")
-    $lines.Add('')
-    $lines.Add("Delete older copies first, so your browser doesn't rename the new ones. Then download both files and run this in PowerShell in their folder. It prints ``True`` if the archive is intact.")
-    $lines.Add('')
-    $lines.Add('```powershell')
-    $lines.Add("`$hash, `$file = (Get-Content $ArchiveName.sha256) -split '\s+'; (Get-FileHash `$file).Hash -eq `$hash")
-    $lines.Add('```')
-    $lines.Add('')
+    $section = New-Object System.Collections.Generic.List[string]
+    $section.Add('## Download')
+    if ($Download.Count -gt 0) {
+        $rows = @('| File | For |', '| --- | --- |') + @($Download | ForEach-Object {
+                "| [$($_.Name)]($base/releases/download/$Tag/$($_.Name)) | $($_.Label) |"
+            })
+        $section.Add($rows -join "`n")
+    }
+    $link = "$base/blob/$Tag/README.md"
+    $heading = Get-InstallHeading $Readme
+    if ($heading) {
+        $section.Add("For how to install it, see [$heading]($link#$(ConvertTo-Anchor $heading)) in the README.")
+    }
+    else {
+        $section.Add("For how to install it, see the [README]($link).")
+    }
+    $parts.Add($section -join "`n`n")
 
     $Commits = @(Skip-RevertedCommit -Commits $Commits)
     $rest = @($Commits | Where-Object { -not $_.Breaking })
@@ -186,42 +247,54 @@ function Format-ReleaseNotes {
     $listed = @($sections | ForEach-Object { $_.Commits })
     $others = @($rest | Where-Object { $_ -notin $listed })
 
-    $lines.Add("## $($Emoji.Changes) What's changed")
-    $lines.Add('')
-    foreach ($section in $sections) {
-        if ($section.Commits.Count -eq 0) { continue }
-        $lines.Add("### $($section.Title)")
-        $lines.Add('')
-        foreach ($c in $section.Commits) {
-            $text = if ($section.Breaking) { $c.Breaking } else { $c.Description }
-            $lines.Add((Format-CommitLine -Commit $c -Repository $Repository -Text $text))
+    $changes = New-Object System.Collections.Generic.List[string]
+    $changes.Add("## What's changed")
+    foreach ($s in $sections) {
+        if ($s.Commits.Count -eq 0) { continue }
+        $lines = foreach ($c in $s.Commits) {
+            $text = if ($s.Breaking) { $c.Breaking } else { $c.Description }
+            Format-CommitLine -Commit $c -Repository $Repository -Text $text
         }
-        $lines.Add('')
+        $changes.Add("### $($s.Title)`n`n$($lines -join "`n")")
     }
     # A commit that doesn't follow Conventional Commits may still change the installer
     $untyped = @($others | Where-Object { -not $_.Type })
     if ($listed.Count -eq 0 -and $untyped.Count -eq 0) {
-        $lines.Add('No user-facing changes.')
-        $lines.Add('')
+        $changes.Add('No user-facing changes.')
     }
     if ($others.Count -gt 0) {
-        $lines.Add("<details><summary>$($Emoji.Other) Other changes ($($others.Count))</summary>")
-        $lines.Add('')
-        foreach ($c in $others) {
-            $lines.Add((Format-CommitLine -Commit $c -Repository $Repository))
-        }
-        $lines.Add('')
-        $lines.Add('</details>')
-        $lines.Add('')
+        $lines = foreach ($c in $others) { Format-CommitLine -Commit $c -Repository $Repository }
+        $changes.Add("<details>`n<summary>$($Emoji.Other) Other changes ($($others.Count))</summary>`n`n$($lines -join "`n")`n`n</details>")
     }
-
     if ($PreviousTag) {
-        $lines.Add("**Full changelog:** [$PreviousTag...$Tag]($base/compare/$PreviousTag...$Tag)")
+        $changes.Add("**Full changelog:** [$PreviousTag...$Tag]($base/compare/$PreviousTag...$Tag)")
     }
     else {
-        $lines.Add("**Full changelog:** [commits up to $Tag]($base/commits/$Tag)")
+        $changes.Add("**Full changelog:** [all commits]($base/commits/$Tag)")
     }
-    ($lines -join "`n") + "`n"
+    $parts.Add($changes -join "`n`n")
+
+    if ($Download.Count -gt 0) {
+        $systems = @($Download | ForEach-Object { $_.System })
+        $commands = @($Checks.Keys | Where-Object { $_ -in $systems } | ForEach-Object { "- $($Checks[$_])" })
+        $checksums = @($Download | ForEach-Object { $_.Checksum }) -join "`n"
+        $fence = '```'
+        $parts.Add("<details>`n<summary>$($Emoji.Verify) SHA-256</summary>`n`n$fence`n$checksums`n$fence`n`n" +
+            "To check your downloads, put them and their ``.sha256`` files in a folder of their own, and run the command for your system there. Delete older copies first, so your browser doesn't rename the new ones.`n`n" +
+            ($commands -join "`n") + "`n`n</details>")
+    }
+    ($parts -join "`n`n") + "`n"
+}
+
+# Runs git and returns its output lines, or nothing when it fails. The
+# arguments are splatted, so none may have a wildcard.
+function Invoke-Git {
+    param([string[]]$Arguments)
+    # Under Stop, Windows PowerShell 5.1 throws on git's stderr even when it is
+    # redirected
+    $ErrorActionPreference = 'Continue'
+    $out = & git @Arguments 2>$null
+    if ($LASTEXITCODE -eq 0) { $out }
 }
 
 # The tag this release is compared with, or nothing for the first release
@@ -241,6 +314,19 @@ function Get-PreviousTag {
     if ($LASTEXITCODE -eq 0) { $previous }
 }
 
+# An annotated tag's message without its first line and its signature. A
+# lightweight tag has none: for-each-ref would give the tagged commit's message.
+function Get-TagMessage {
+    param([string]$Tag)
+    if ((Invoke-Git -Arguments 'for-each-ref', '--format=%(objecttype)', "refs/tags/$Tag") -ne 'tag') { return '' }
+    $lines = @(Invoke-Git -Arguments 'for-each-ref', '--format=%(contents)', "refs/tags/$Tag") | Select-Object -Skip 1
+    $kept = foreach ($line in $lines) {
+        if ($line.StartsWith('-----BEGIN ')) { break }
+        $line
+    }
+    (@($kept) -join "`n").Trim()
+}
+
 # The commits in the release, oldest first
 function Get-ReleaseCommit {
     param([string]$Tag, [string]$PreviousTag)
@@ -257,9 +343,11 @@ function Get-ReleaseCommit {
 
 if ($MyInvocation.InvocationName -ne '.') {
     $previous = Get-PreviousTag -Tag $Tag
+    $lines = foreach ($path in $Sha256File) { Get-Content -LiteralPath $path }
     $notes = Format-ReleaseNotes -Tag $Tag -Repository $Repository -PreviousTag $previous `
         -Commits @(Get-ReleaseCommit -Tag $Tag -PreviousTag $previous) `
-        -ArchiveName $ArchiveName
+        -Download @(Get-Download -Lines @($lines)) -Message (Get-TagMessage -Tag $Tag) `
+        -Readme (@(Invoke-Git -Arguments 'show', "${Tag}:README.md") -join "`n")
     # .NET resolves relative paths against the process's directory, not PowerShell's
     $path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutFile)
     [System.IO.File]::WriteAllText($path, $notes, (New-Object System.Text.UTF8Encoding $false))

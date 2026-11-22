@@ -1,19 +1,29 @@
 BeforeAll {
     . (Join-Path $PSScriptRoot '..\.github\scripts\New-ReleaseNotes.ps1')
 
-    $script:Repo = 'owner/repo'
+    $script:Repo = 'me/repo'
+    $script:Base = 'https://github.com/me/repo'
 
     function New-Commit {
-        param([string]$Subject, [string]$Body = '')
-        $hash = -join ((1..40) | ForEach-Object { '0123456789abcdef'[(Get-Random -Maximum 16)] })
-        ConvertFrom-CommitMessage -Hash $hash -Subject $Subject -Body $Body
+        param([string]$Subject, [string]$Body = '', [string]$Hash)
+        if (-not $Hash) {
+            $Hash = -join ((1..40) | ForEach-Object { '0123456789abcdef'[(Get-Random -Maximum 16)] })
+        }
+        ConvertFrom-CommitMessage -Hash $Hash -Subject $Subject -Body $Body
     }
 
     function Get-Notes {
-        param([string]$Tag = 'v1.0.0', [object[]]$Commits = @(), [string]$PreviousTag)
-        Format-ReleaseNotes -Tag $Tag -Repository $Repo -PreviousTag $PreviousTag -Commits $Commits `
-            -ArchiveName 'sc2k_install.zip'
+        param([string]$Tag = 'v1.0.0', [object[]]$Commits = @(), [string]$PreviousTag, [object[]]$Download = @())
+        Format-ReleaseNotes -Tag $Tag -Repository $Repo -PreviousTag $PreviousTag -Commits $Commits -Download $Download
     }
+
+    function Get-Link([string]$Hash) {
+        "([``$($Hash.Substring(0, 7))``]($Base/commit/$Hash))"
+    }
+
+    # Leaves out the machine's git config, which may have no author or sign
+    # commits and tags
+    $script:GitConfig = @('-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgSign=false', '-c', 'tag.gpgSign=false')
 }
 
 Describe 'ConvertFrom-CommitMessage' {
@@ -36,8 +46,8 @@ Describe 'ConvertFrom-CommitMessage' {
     }
 
     It 'takes a BREAKING CHANGE footer up to the next footer' {
-        $body = "Why.`n`nBREAKING CHANGE: the old`nscript is gone.`nCo-Authored-By: Someone <a@b.c>`n"
-        (New-Commit 'feat!: rewrite it' $body).Breaking | Should -Be 'Rewrite it. the old script is gone.'
+        $body = "Why.`n`nBREAKING CHANGE: Run the new`nscript.`nCo-Authored-By: Someone <a@b.c>`n"
+        (New-Commit 'feat!: rewrite it' $body).Breaking | Should -Be 'Rewrite it. Run the new script.'
     }
 
     It 'finds the commit that a revert reverts' {
@@ -53,10 +63,12 @@ Describe 'Format-Sentence' {
     It 'capitalizes a plain first word' {
         Format-Sentence 'add a thing' | Should -Be 'Add a thing'
         Format-Sentence "don't ask" | Should -Be "Don't ask"
+        Format-Sentence "lessmsi's output" | Should -Be "Lessmsi's output"
     }
 
-    It 'leaves a file name as it is' {
+    It 'leaves a file name or an option as it is' {
         Format-Sentence 'sc2k_install.bat is gone' | Should -Be 'sc2k_install.bat is gone'
+        Format-Sentence '-GitHubToken works' | Should -Be '-GitHubToken works'
     }
 }
 
@@ -80,28 +92,114 @@ Describe 'Skip-RevertedCommit' {
     }
 }
 
+Describe 'Get-Download' {
+    It 'takes the archives from the .sha256 lines' {
+        $download = @(Get-Download -Lines @('abc123 *sc2k_install.zip'))
+        $download.Count | Should -Be 1
+        $download[0].Name | Should -Be 'sc2k_install.zip'
+        $download[0].Label | Should -Be 'Windows'
+        $download[0].Checksum | Should -Be 'abc123 *sc2k_install.zip'
+    }
+
+    It 'refuses a file it does not know' {
+        { Get-Download -Lines @('abc123  other.zip') } | Should -Throw '*other.zip matches none*'
+    }
+}
+
+Describe 'Get-InstallHeading' {
+    It 'finds the first heading about installing, outside code blocks' {
+        Get-InstallHeading "# App`n`n``````n## Install from a code block`n``````n`n## Usage`n`n## Quick start`n" |
+            Should -Be 'Quick start'
+        Get-InstallHeading "# App`n`n## Usage`n" | Should -BeNullOrEmpty
+    }
+
+    It 'gives the anchor GitHub gives the heading' {
+        ConvertTo-Anchor 'Download a release (easiest)' | Should -Be 'download-a-release-easiest'
+    }
+}
+
 Describe 'Format-ReleaseNotes' {
-    It 'has a verification command that checks the archive against its .sha256' {
-        $notes = Get-Notes
-        $command = [scriptblock]::Create([regex]::Match($notes, '(?s)```powershell\n(.+?)\n```').Groups[1].Value)
+    It 'has every part, in order' {
+        $a, $b, $c, $d = 'a', 'b', 'c', 'd' | ForEach-Object { $_ * 40 }
+        $commits = @(
+            New-Commit 'feat(install): add a thing' -Hash $a
+            New-Commit 'fix!: keep the log' 'BREAKING CHANGE: Move it to log.txt.' -Hash $b
+            New-Commit 'docs: explain a thing' -Hash $c
+            New-Commit 'ci: run the tests' -Hash $d
+        )
+        $notes = Format-ReleaseNotes -Tag 'v1.1.0-beta.1' -Repository $Repo -PreviousTag 'v1.0.0' -Commits $commits `
+            -Download @(Get-Download -Lines @('abc123  sc2k_install.zip')) -Message 'Adds a thing.' `
+            -Readme "# sc2k`n`n## Quick start`n"
+        $expected = @(
+            '> [!WARNING]'
+            "> This is a pre-release, for trying things out before 1.1.0 is final. Please report problems in [Issues]($Base/issues)."
+            ''
+            'Adds a thing.'
+            ''
+            '## Download'
+            ''
+            '| File | For |'
+            '| --- | --- |'
+            "| [sc2k_install.zip]($Base/releases/download/v1.1.0-beta.1/sc2k_install.zip) | Windows |"
+            ''
+            "For how to install it, see [Quick start]($Base/blob/v1.1.0-beta.1/README.md#quick-start) in the README."
+            ''
+            "## What's changed"
+            ''
+            "### $($Emoji.Warning) Breaking changes"
+            ''
+            "- Keep the log. Move it to log.txt. $(Get-Link $b)"
+            ''
+            "### $($Emoji.Feature) Features"
+            ''
+            "- **install:** Add a thing $(Get-Link $a)"
+            ''
+            "### $($Emoji.Docs) Documentation"
+            ''
+            "- Explain a thing $(Get-Link $c)"
+            ''
+            '<details>'
+            "<summary>$($Emoji.Other) Other changes (1)</summary>"
+            ''
+            "- ci: run the tests $(Get-Link $d)"
+            ''
+            '</details>'
+            ''
+            "**Full changelog:** [v1.0.0...v1.1.0-beta.1]($Base/compare/v1.0.0...v1.1.0-beta.1)"
+            ''
+            '<details>'
+            "<summary>$($Emoji.Verify) SHA-256</summary>"
+            ''
+            '```'
+            'abc123  sc2k_install.zip'
+            '```'
+            ''
+            "To check your downloads, put them and their ``.sha256`` files in a folder of their own, and run the command for your system there. Delete older copies first, so your browser doesn't rename the new ones."
+            ''
+            "- $($Checks.Windows)"
+            ''
+            '</details>'
+            ''
+        ) -join "`n"
+        $notes | Should -BeExactly $expected
+    }
+
+    It 'has a check command that tells an intact download from a damaged one' {
+        $notes = Get-Notes -Download @(Get-Download -Lines @('abc123  sc2k_install.zip'))
+        $command = [scriptblock]::Create([regex]::Match($notes, '- Windows, in PowerShell: `(.+)`').Groups[1].Value)
         Push-Location $TestDrive
         try {
             Set-Content sc2k_install.zip 'archive' -NoNewline
             $hash = (Get-FileHash sc2k_install.zip).Hash.ToLowerInvariant()
             # The format sha256sum writes in the release workflow
             Set-Content sc2k_install.zip.sha256 "$hash  sc2k_install.zip"
-            & $command | Should -BeTrue
+            & $command | Should -Be 'sc2k_install.zip: True'
             Set-Content sc2k_install.zip 'damaged' -NoNewline
-            & $command | Should -BeFalse
+            & $command | Should -Be 'sc2k_install.zip: False'
         }
         finally {
             Pop-Location
         }
-    }
-
-    It 'warns about a pre-release only' {
-        Get-Notes -Tag 'v1.0.0-preview.1' | Should -Match '\[!WARNING\]'
-        Get-Notes | Should -Not -Match '\[!WARNING\]'
     }
 
     It 'sorts commits into sections by type and lists a breaking change once' {
@@ -130,33 +228,38 @@ Describe 'Format-ReleaseNotes' {
     }
 
     It 'says so when no commit changes what users see' {
-        Get-Notes -Commits @(New-Commit 'ci: tweak') | Should -Match 'No user-facing changes'
+        Get-Notes -Commits @(New-Commit 'ci: tweak') | Should -Match "## What's changed\n\nNo user-facing changes.\n"
         Get-Notes -Commits @(New-Commit 'Tidy up') | Should -Not -Match 'No user-facing changes'
     }
 
-    It 'links the comparison with the previous tag' {
-        Get-Notes -PreviousTag 'v0.9.0' | Should -Match 'compare/v0\.9\.0\.\.\.v1\.0\.0'
+    It 'has no warning or checksums for a final release without files' {
+        $notes = Get-Notes
+        $notes | Should -Not -Match '\[!WARNING\]'
+        $notes | Should -Not -Match 'SHA-256'
+        $notes | Should -Match ([regex]::Escape("## Download`n`nFor how to install it, see the [README]($Base/blob/v1.0.0/README.md)."))
+        $notes | Should -Match ([regex]::Escape("**Full changelog:** [all commits]($Base/commits/v1.0.0)"))
     }
 }
 
-Describe 'Get-PreviousTag and Get-ReleaseCommit' {
+Describe 'Get-PreviousTag, Get-ReleaseCommit and Get-TagMessage' {
     BeforeAll {
         $script:Git = Join-Path $TestDrive 'repo'
         New-Item -ItemType Directory $Git | Out-Null
         Push-Location $Git
-        # Leaves out the machine's git config, which may have no author or
-        # sign commits and tags
         function Add-TaggedCommit([string]$Tag) {
-            $config = @('-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgSign=false', '-c', 'tag.gpgSign=false')
-            & git @config commit -q --allow-empty -m $Tag
-            & git @config tag -a -m $Tag $Tag
+            & git @GitConfig commit -q --allow-empty -m $Tag
+            & git @GitConfig tag -a -m $Tag $Tag
         }
         & git init -q
         # Names that match the tag patterns, as vendor does in this repository
         New-Item -ItemType Directory 'vendor', 'v1-x' | Out-Null
         Add-TaggedCommit 'v1.0.0'
-        Add-TaggedCommit 'v1.1.0-preview.1'
+        Add-TaggedCommit 'v1.1.0-beta.1'
         Add-TaggedCommit 'v1.1.0'
+        & git @GitConfig commit -q --allow-empty -m 'feat: add a thing' -m "A body that isn't the tag's."
+        & git @GitConfig tag 'v1.2.0'
+        & git @GitConfig tag -a -m 'sc2k 1.3.0' -m 'Adds a thing.' 'v1.3.0'
+        & git @GitConfig tag -a -m 'v1.4.0' -m 'Adds another.' -m "-----BEGIN SSH SIGNATURE-----`nU1NIU0lH`n-----END SSH SIGNATURE-----" 'v1.4.0'
     }
 
     AfterAll {
@@ -168,7 +271,7 @@ Describe 'Get-PreviousTag and Get-ReleaseCommit' {
     }
 
     It 'compares a pre-release with the previous tag' {
-        Get-PreviousTag -Tag 'v1.1.0-preview.1' | Should -Be 'v1.0.0'
+        Get-PreviousTag -Tag 'v1.1.0-beta.1' | Should -Be 'v1.0.0'
     }
 
     It 'has nothing for the first release' {
@@ -177,6 +280,13 @@ Describe 'Get-PreviousTag and Get-ReleaseCommit' {
 
     It 'lists the commits oldest first' {
         (@(Get-ReleaseCommit -Tag 'v1.1.0' -PreviousTag 'v1.0.0').Subject -join ', ') |
-            Should -Be 'v1.1.0-preview.1, v1.1.0'
+            Should -Be 'v1.1.0-beta.1, v1.1.0'
+    }
+
+    It "takes the summary from the tag's message after its first line" {
+        Get-TagMessage -Tag 'v1.1.0' | Should -BeNullOrEmpty
+        Get-TagMessage -Tag 'v1.2.0' | Should -BeNullOrEmpty
+        Get-TagMessage -Tag 'v1.3.0' | Should -Be 'Adds a thing.'
+        Get-TagMessage -Tag 'v1.4.0' | Should -Be 'Adds another.'
     }
 }

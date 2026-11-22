@@ -81,7 +81,7 @@ the minor, and anything else the patch.
 Tag a commit on `main` and push the tag:
 
 ```sh
-git tag -a v1.0.0 -m "1.0.0"
+git tag -a v1.0.0 -m "v1.0.0"
 git push origin v1.0.0
 ```
 
@@ -94,7 +94,7 @@ artifact.
 
 The release workflow runs CI with the tag's version, then creates a GitHub
 release with CI's archive, its SHA-256 and an attestation of where it was built.
-A tag with a hyphen, such as `v1.0.0-preview.1`, becomes a pre-release.
+A tag with a hyphen, such as `v1.0.0-beta.1`, becomes a pre-release.
 
 `.github/scripts/New-ReleaseNotes.ps1` writes the release notes from the commit
 subjects since the previous tag, so write them for users. A release is compared
@@ -102,8 +102,19 @@ with the previous release, skipping pre-releases, so its notes cover everything
 since then. Breaking changes, features, fixes, performance and documentation
 get their own sections, with the text of a `BREAKING CHANGE:` footer. Other
 commits go under a collapsed list, and a reverted commit is left out with its
-revert. To preview the notes for a tag:
+revert.
+
+The download table lists the archives the release's `.sha256` files name,
+with the labels in `$Files` at the top of the script, and links the README's
+quick start at the tag. A new kind of archive needs a line in `$Files`. A
+second `-m` on the tag adds a summary at the top of the notes:
+
+```sh
+git tag -a v1.1.0 -m "v1.1.0" -m "A sentence or two about the release."
+```
+
+To preview the notes for a tag:
 
 ```
-./.github/scripts/New-ReleaseNotes.ps1 -Tag v1.0.0 -Repository Mahir007/sc2k_win95-installer -ArchiveName sc2k_install.zip -OutFile notes.md
+./.github/scripts/New-ReleaseNotes.ps1 -Tag v1.0.0 -Repository Mahir007/sc2k_win95-installer -Sha256File sc2k_install.zip.sha256 -OutFile notes.md
 ```
