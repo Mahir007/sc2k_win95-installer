@@ -64,10 +64,17 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 <type>[optional scope][!]: <description>
 ```
 
-Types used here: `feat`, `fix`, `docs`, `test`, `ci`, `build`, `refactor`,
-`chore`. Mark breaking changes with `!` or a `BREAKING CHANGE:` footer. The
-type decides the next version: `fix` bumps the patch, `feat` the minor, and a
-breaking change the major.
+The release notes are written from them, so the type says who a change is
+for. `feat` and `fix` are changes users of the installer see, and `perf` and
+`docs` are listed in the notes too. Use `docs(contributing)` for this file,
+and `test`, `ci`, `build`, `refactor`, `style` or `chore` for everything
+else, even when it adds or fixes something. Mark a breaking change with `!`
+and a `BREAKING CHANGE:` footer that says what users have to do differently.
+A revert keeps the `This reverts commit <hash>.` line that `git revert`
+writes.
+
+The type decides the next version: a breaking change bumps the major, `feat`
+the minor, and anything else the patch.
 
 ## Releasing
 
